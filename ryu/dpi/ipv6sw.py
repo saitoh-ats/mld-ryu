@@ -19,7 +19,7 @@ from webob import Response
 
 from ryu.base import app_manager
 from ryu.controller import ofp_event, dpset
-from ryu.controller.handler import MAIN_DISPATCHER
+from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet
@@ -62,23 +62,26 @@ class DpiRestApi(RestStatsApi):
                        controller=StatsController, action='test',
                        conditions=dict(method=['PUT']))
 
-
-    def add_flow(self, datapath, port, dst, actions):
+    def _add_flow(self, datapath, priority, match, actions):
         ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
 
-        match = datapath.ofproto_parser.OFPMatch(in_port=port,
-                                                 eth_dst=dst)
-        inst = [datapath.ofproto_parser.OFPInstructionActions(
-                ofproto.OFPIT_APPLY_ACTIONS, actions)]
+        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
+                                             actions)]
 
-        mod = datapath.ofproto_parser.OFPFlowMod(
-            datapath=datapath, cookie=0, cookie_mask=0, table_id=0,
-            command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
-            priority=0, buffer_id=ofproto.OFP_NO_BUFFER,
-            out_port=ofproto.OFPP_ANY,
-            out_group=ofproto.OFPG_ANY,
-            flags=0, match=match, instructions=inst)
-        #datapath.send_msg(mod)
+        mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
+                                match=match, instructions=inst)
+        datapath.send_msg(mod)
+
+    @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
+    def _switch_features_handler(self, ev):
+        dp = ev.msg.datapath
+        ofproto = dp.ofproto
+        parser = dp.ofproto_parser
+        match = parser.OFPMatch()
+        actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
+            ofproto.OFPCML_NO_BUFFER)]
+        self._add_flow(dp, 0, match, actions)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
@@ -109,8 +112,8 @@ class DpiRestApi(RestStatsApi):
         actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
 
         # install a flow to avoid packet_in next time
-        if out_port != ofproto.OFPP_FLOOD:
-            self.add_flow(datapath, in_port, dst, actions)
+        #if out_port != ofproto.OFPP_FLOOD:
+        #    self.add_flow(datapath, in_port, dst, actions)
 
         out = datapath.ofproto_parser.OFPPacketOut(
             datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
@@ -154,7 +157,7 @@ class DpiRestApi(RestStatsApi):
         mod = dp.ofproto_parser.OFPFlowMod(
             datapath=dp, cookie=0x1, cookie_mask=0, table_id=0,
             command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
-            priority=0, buffer_id=ofproto.OFP_NO_BUFFER,
+            priority=100, buffer_id=ofproto.OFP_NO_BUFFER,
             out_port=ofproto.OFPP_ANY,
             out_group=ofproto.OFPG_ANY,
             flags=0, match=match, instructions=inst)

@@ -15,6 +15,7 @@
 
 import logging
 import struct
+from webob import Response
 
 from ryu.base import app_manager
 from ryu.controller import ofp_event, dpset
@@ -23,20 +24,44 @@ from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
+from ryu.app.ofctl_rest import StatsController, RestStatsApi
+from ryu.app.wsgi import ControllerBase
 
 
 LOG = logging.getLogger(__name__)
 
 
-class SimpleSwitch13(app_manager.RyuApp):
-    OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
-    _CONTEXTS = {
-        'dpset': dpset.DPSet
-    }
+class StatsController(ControllerBase):
+    def test(self, req, **_kwargs):
+        LOG.debug(("--test--", self, "dir", dir(self), "req", req, "req.body", req.body, "kwargs", _kwargs))
+        try:
+            flow = eval(req.body)
+        except SyntaxError:
+            LOG.debug('invalid syntax %s', req.body)
+            return Response(status=400)
+        LOG.debug(("--test--", req.body, "flow", flow))
 
+
+
+class DpiRestApi(RestStatsApi):
     def __init__(self, *args, **kwargs):
-        super(SimpleSwitch13, self).__init__(*args, **kwargs)
+        super(DpiRestApi, self).__init__(*args, **kwargs)
+        #RestStatsApi.__init__(self, *args, **kwargs)
         self.mac_to_port = {}
+
+        wsgi = kwargs['wsgi']
+        mapper = wsgi.mapper
+        wsgi.registory['StatsController'] = self.data
+        path = '/stats'
+
+
+        LOG.debug(("##### DPI #####","**CONTEXTS",self._CONTEXTS,"**dpset",self.dpset, "**data",self.data))
+
+        uri = path + '/test'
+        mapper.connect('stats', uri,
+                       controller=StatsController, action='test',
+                       conditions=dict(method=['PUT']))
+
 
     def add_flow(self, datapath, port, dst, actions):
         ofproto = datapath.ofproto

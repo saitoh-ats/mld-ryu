@@ -18,7 +18,6 @@ import logging
 
 from ryu.base import app_manager
 from ryu.controller import event
-from ryu.controller import dp_type
 from ryu.controller import handler
 from ryu.controller import ofp_event
 from ryu.controller.handler import set_ev_cls
@@ -84,34 +83,50 @@ class PortState(dict):
 
 # this depends on controller::Datapath and dispatchers in handler
 class DPSet(app_manager.RyuApp):
+    """
+    DPSet application manages a set of switches (datapaths)
+    connected to this controller.
+    """
+
     def __init__(self):
         super(DPSet, self).__init__()
         self.name = 'dpset'
 
-        # dp registration and type setting can be occur in any order
-        # Sometimes the sw_type is set before dp connection
-        self.dp_types = {}
-
         self.dps = {}   # datapath_id => class Datapath
         self.port_state = {}  # datapath_id => ports
 
-    def register(self, dp):
+    def _register(self, dp):
+        LOG.debug('DPSET: register datapath %s', dp)
         assert dp.id is not None
-        assert dp.id not in self.dps
 
-        dp_type_ = self.dp_types.pop(dp.id, None)
-        if dp_type_ is not None:
-            dp.dp_type = dp_type_
-
+        # while dpid should be unique, we need to handle duplicates here
+        # because it's entirely possible for a switch to reconnect us
+        # before we notice the drop of the previous connection.
+        # in that case,
+        # - forget the older connection as it likely will disappear soon
+        # - do not send EventDP leave/enter events
+        # - keep the PortState for the dpid
+        if dp.id in self.dps:
+            self.logger.warning('DPSET: Multiple connections from %s',
+                                dpid_to_str(dp.id))
+            self.logger.debug('DPSET: Forgetting datapath %s', self.dps[dp.id])
+            self.logger.debug('DPSET: New datapath %s', dp)
         self.dps[dp.id] = dp
-        self.port_state[dp.id] = PortState()
-        ev = EventDP(dp, True)
-        for port in dp.ports.values():
-            self._port_added(dp, port)
-            ev.ports.append(port)
-        self.send_event_to_observers(ev)
+        if not dp.id in self.port_state:
+            self.port_state[dp.id] = PortState()
+            ev = EventDP(dp, True)
+            for port in dp.ports.values():
+                self._port_added(dp, port)
+                ev.ports.append(port)
+            self.send_event_to_observers(ev)
 
-    def unregister(self, dp):
+    def _unregister(self, dp):
+        # see the comment in _register().
+        if not dp in self.dps.values():
+            return
+        LOG.debug('DPSET: unregister datapath %s', dp)
+        assert self.dps[dp.id] == dp
+
         # Now datapath is already dead, so port status change event doesn't
         # interfere us.
         ev = EventDP(dp, False)
@@ -121,24 +136,27 @@ class DPSet(app_manager.RyuApp):
 
         self.send_event_to_observers(ev)
 
-        if dp.id in self.dps:
-            del self.dps[dp.id]
-            del self.port_state[dp.id]
-            assert dp.id not in self.dp_types
-            self.dp_types[dp.id] = getattr(dp, 'dp_type', dp_type.UNKNOWN)
-
-    def set_type(self, dp_id, dp_type_=dp_type.UNKNOWN):
-        if dp_id in self.dps:
-            dp = self.dps[dp_id]
-            dp.dp_type = dp_type_
-        else:
-            assert dp_id not in self.dp_types
-            self.dp_types[dp_id] = dp_type_
+        del self.dps[dp.id]
+        del self.port_state[dp.id]
 
     def get(self, dp_id):
+        """
+        This method returns the ryu.controller.controller.Datapath
+        instance for the given Datapath ID.
+        Raises KeyError if no such a datapath connected to this controller.
+        """
         return self.dps.get(dp_id)
 
     def get_all(self):
+        """
+        This method returns a list of tuples which represents
+        instances for switches connected to this controller.
+        The tuple consists of a Datapath Id and an instance of
+        ryu.controller.controller.Datapath.
+        A return value looks like the following:
+
+            [ (dpid_A, Datapath_A), (dpid_B, Datapath_B), ... ]
+        """
         return self.dps.items()
 
     def _port_added(self, datapath, port):
@@ -153,11 +171,9 @@ class DPSet(app_manager.RyuApp):
         datapath = ev.datapath
         assert datapath is not None
         if ev.state == handler.MAIN_DISPATCHER:
-            LOG.debug('DPSET: register datapath %s', datapath)
-            self.register(datapath)
+            self._register(datapath)
         elif ev.state == handler.DEAD_DISPATCHER:
-            LOG.debug('DPSET: unregister datapath %s', datapath)
-            self.unregister(datapath)
+            self._unregister(datapath)
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, handler.CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -196,6 +212,12 @@ class DPSet(app_manager.RyuApp):
             self.send_event_to_observers(EventPortModify(datapath, port))
 
     def get_port(self, dpid, port_no):
+        """
+        This method returns the ryu.controller.dpset.PortState
+        instance for the given Datapath ID and the port number.
+        Raises ryu_exc.PortNotFound if no such a datapath connected to
+        this controller or no such a port exists.
+        """
         try:
             return self.port_state[dpid][port_no]
         except KeyError:
@@ -203,4 +225,9 @@ class DPSet(app_manager.RyuApp):
                                        network_id=None)
 
     def get_ports(self, dpid):
+        """
+        This method returns a list of ryu.controller.dpset.PortState
+        instances for the given Datapath ID.
+        Raises KeyError if no such a datapath connected to this controller.
+        """
         return self.port_state[dpid].values()

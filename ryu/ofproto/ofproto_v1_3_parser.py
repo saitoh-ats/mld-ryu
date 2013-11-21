@@ -370,6 +370,13 @@ class OFPExperimenter(MsgBase):
 
         return msg
 
+    def _serialize_body(self):
+        assert self.data is not None
+        msg_pack_into(ofproto_v1_3.OFP_EXPERIMENTER_HEADER_PACK_STR,
+                      self.buf, ofproto_v1_3.OFP_HEADER_SIZE,
+                      self.experimenter, self.exp_type)
+        self.buf += self.data
+
 
 @_set_msg_type(ofproto_v1_3.OFPT_FEATURES_REQUEST)
 class OFPFeaturesRequest(MsgBase):
@@ -4994,6 +5001,9 @@ class OFPTableFeaturePropActions(OFPTableFeatureProp):
 # but they all look broken or incomplete.  according to the spec,
 # oxm_hasmask should be 1 if a switch supports masking for the type.
 # the right value for oxm_length is not clear from the spec.
+# update: OpenFlow 1.3.3 "clarified" that oxm_length here is the payload
+# length.  it's still unclear if it should be doubled for hasmask or not,
+# though.
 #   ofsoftswitch13
 #     oxm_hasmask  always 0
 #     oxm_length   same as ofp_match etc (as without mask)
@@ -5077,8 +5087,6 @@ class OFPTableFeaturesStatsRequest(OFPMultipartRequest):
     Table features statistics request message
 
     The controller uses this message to query table features.
-
-    This message is currently unimplemented.
     """
     def __init__(self, datapath, flags,
                  body=[],

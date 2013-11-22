@@ -316,10 +316,10 @@ assert (calcsize(OFP_SWITCH_FEATURES_PACK_STR) + OFP_HEADER_SIZE ==
 OFPC_FLOW_STATS = 1 << 0    # Flow statistics.
 OFPC_TABLE_STATS = 1 << 1    # Table statistics.
 OFPC_PORT_STATS = 1 << 2    # Port statistics.
-OFPC_GROUP_STATS = 1 << 3    # 802.1d spanning tree.
+OFPC_GROUP_STATS = 1 << 3    # Group statistics.
 OFPC_IP_REASM = 1 << 5        # Can reassemble IP fragments.
 OFPC_QUEUE_STATS = 1 << 6    # Queue statistics.
-OFPC_PORT_BLOCKED = 1 << 8    # Match IP addresses in ARP pkts.
+OFPC_PORT_BLOCKED = 1 << 8    # Switch will block looping ports.
 
 # struct ofp_switch_config
 OFP_SWITCH_CONFIG_PACK_STR = '!HH'
@@ -798,11 +798,11 @@ OFPHFC_EPERM = 1        # Permissions error.
 # enum ofp_bad_request_code
 OFPBRC_BAD_VERSION = 0        # ofp_header.version not supported.
 OFPBRC_BAD_TYPE = 1        # ofp_header.type not supported.
-OFPBRC_BAD_MULTIPART = 2        # ofp_stats_msg.type not supported.
+OFPBRC_BAD_MULTIPART = 2        # ofp_multipart_request.type not supported.
 OFPBRC_BAD_EXPERIMENTER = 3    # Experimenter id not supported
                                # (in ofp_experimenter_header
-                               # or ofp_stats_request or
-                               # ofp_stats_reply).
+                               # or ofp_multipart_request or
+                               # ofp_multipart_reply).
 OFPBRC_BAD_EXP_TYPE = 4        # Experimenter type not supported.
 OFPBRC_EPERM = 5        # Permissions error.
 OFPBRC_BAD_LEN = 6        # Wrong request length for type.
@@ -1057,6 +1057,7 @@ oxm_types = [
     oxm_fields.OpenFlowBasic('pbb_isid', 37, oxm_fields.Int3),
     oxm_fields.OpenFlowBasic('tunnel_id', 38, oxm_fields.Int8),
     oxm_fields.OpenFlowBasic('ipv6_exthdr', 39, oxm_fields.Int2),
+    oxm_fields.ONFExperimenter('pbb_uca', 2560, oxm_fields.Int1),
 ]
 
 oxm_fields.generate(__name__)

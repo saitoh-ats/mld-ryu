@@ -162,3 +162,4 @@ class DpiRestApi(RestStatsApi):
             out_group=ofproto.OFPG_ANY,
             flags=0, match=match, instructions=inst)
         dp.send_msg(mod)
+        dp.send_barrier()

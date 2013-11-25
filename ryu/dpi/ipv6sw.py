@@ -26,17 +26,97 @@ from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 from ryu.app.ofctl_rest import StatsController, RestStatsApi
 from ryu.app.wsgi import ControllerBase, route
+from ryu.ofproto.ofproto_parser import StringifyMixin
 
 
 LOG = logging.getLogger(__name__)
+JSON = {'cookie': 1, 'priority': 99,
+    'match': [{'in_port': 1}],
+    'instructions': [{'output': 2}]
+    }
+
+class StringifyFlow(StringifyMixin):
+    """
+    """
+    def __init__(self, cookie=0, priority=0, idle_timeout=0, hard_timeout=0,
+                 match=None, instructions=[]):
+        super(StringifyFlow, self).__init__()
+        self.cookie = cookie
+        self.priority = priority
+        self.idle_timeout = idle_timeout
+        self.hard_timeout = hard_timeout
+        self.match = match
+        self.instructions = instructions
+
+
+class Flow(dict):
+    """
+    flow = {'cookie': cookie,
+            'priority': priority,
+            'flags': 0,
+            'idle_timeout': 0,
+            'hard_timeout': 0,
+            'match': match,
+            'actions': actions}
+    """
+
+    def __init__(self):
+        super(Flow, self).__init__()
+
+        match = {"in_port": 1}
+        actions = [{"output": 2}]
+        instructions = [{"output": 2}]
+
+        self.__setitem__('cookie', 0)
+        self.__setitem__('priority', 0)
+        self.__setitem__('match', match)
+        #self.__setitem__('actions', actions)
+        self.__setitem__('instructions', instructions)
+
+class FlowList(object):
+    """
+    flowlist = {'<dpid>': [flow, ...], ...}
+    flow = {'cookie': cookie,
+            'priority': priority,
+            'flags': 0,
+            'idle_timeout': 0,
+            'hard_timeout': 0,
+            'match': match,
+            'actions': actions}
+    """
+
+    def __init__(self, filename=None):
+        self.flowlist = {}
+
+    def get_switches(self):
+        return self.flowlist.keys()
+
+    def get_flows(self, dpid):
+        try:
+            return self.flowlist[dpid]
+        except:
+            return []
+
+    def set_flows(self, dpid, flows):
+        self.flowlist[dpid] = flows
+
+    def add_flows(self, dpid, flows):
+        if dpid in self.flowlist:
+            self.flowlist[dpid].append(flows)
+        else:
+            self.set_flows(dpid, flows)
+
+    def __str__(self):
+        return str(self.flowlist)
+
 
 
 class StatsController(ControllerBase):
-    DPI_REST_LIST = { 'dpi' : ['on', 'off'] }
+    DPI_REST_LIST = {'dpi': ['on', 'off']}
 
     def _dpi_res(self, status, body, err_msg=None):
         if err_msg:
-            _dpi_body = { 'err_msg' : err_msg, 'body' : body }
+            _dpi_body = {'err_msg': err_msg, 'body': body}
             LOG.debug('REST-ERR: %s: %s', err_msg, str(body))
         else:
             _dpi_body = body
@@ -47,12 +127,12 @@ class StatsController(ControllerBase):
     def test(self, req, **_kwargs):
         body = req.body
         try:
-            dpi = eval(body)['dpi']
+            dpi_sw = eval(body)['dpi']
         except:
             err_msg = "invalid syntax at body"
             return self._dpi_res(400, body, err_msg)
 
-        if dpi not in self.DPI_REST_LIST['dpi']:
+        if dpi_sw not in self.DPI_REST_LIST['dpi']:
             err_msg = "invalid value at dpi"
             return self._dpi_res(400, body, err_msg)
 
@@ -65,7 +145,18 @@ class DpiRestApi(RestStatsApi):
     def __init__(self, *args, **kwargs):
         super(DpiRestApi, self).__init__(*args, **kwargs)
 
-        LOG.debug(("OFP_VERSIONS=", self.OFP_VERSIONS))
+        flow = Flow()
+        sflow = StringifyFlow.from_jsondict(JSON)
+        flowlist = FlowList()
+        flowlist.add_flows(1,[sflow,flow])
+        print flow
+        print sflow
+        print sflow.to_jsondict()['StringifyFlow']
+        print str(flowlist)
+        print flowlist.get_switches()
+        print flowlist.get_flows(1)
+        print flowlist.get_flows(2)
+        exit()
 
         wsgi = kwargs['wsgi']
         wsgi.register(StatsController)
@@ -74,16 +165,37 @@ class DpiRestApi(RestStatsApi):
         LOG.debug(("##### DPI #####","**CONTEXTS",self._CONTEXTS,"**dpset",self.dpset, "**data",self.data))
         LOG.debug(("##### DPI #####","**dpset get",self.dpset.get_all()))
 
-    def _add_flow(self, datapath, priority, match, actions):
+    def _add_flow(self, datapath, match, actions, cookie=0, priority=0):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
+        command = ofproto.OFPFC_ADD
+        self._flowmod(datapath, match, actions, cookie, priority, command)
 
-        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
-                                             actions)]
+    def _del_flow(self, flow_stats):
+        match = flow_stats.match
+        cookie = flow_stats.cookie
+        cmd = self.dp.ofproto.OFPFC_DELETE_STRICT
+        priority = flow_stats.priority
+        actions = []
 
-        mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
-                                match=match, instructions=inst)
-        datapath.send_msg(mod)
+        flow_mod = self.dp.ofproto_parser.OFPFlowMod(
+            self.dp, match, cookie, cmd, priority=priority, actions=actions)
+        self.dp.send_msg(flow_mod)
+        self.logger.info('Delete flow [cookie=0x%x]', cookie, extra=self.sw_id)
+
+    def _flowmod(self, dp, match, actions, cookie, priority, command):
+        ofproto = dp.ofproto
+        inst = [dp.ofproto_parser.OFPInstructionActions(
+                ofproto.OFPIT_APPLY_ACTIONS, actions)]
+        mod = dp.ofproto_parser.OFPFlowMod(
+            datapath=dp, cookie=cookie, cookie_mask=0, table_id=0,
+            command=command, idle_timeout=0, hard_timeout=0,
+            priority=priority, buffer_id=ofproto.OFP_NO_BUFFER,
+            out_port=ofproto.OFPP_ANY,
+            out_group=ofproto.OFPG_ANY,
+            flags=0, match=match, instructions=inst)
+        dp.send_msg(mod)
+        dp.send_barrier()
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def _switch_features_handler(self, ev):
@@ -95,7 +207,7 @@ class DpiRestApi(RestStatsApi):
         if dp.ofproto.OFP_VERSION == ofproto_v1_3.OFP_VERSION:
             actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
                 ofproto.OFPCML_NO_BUFFER)]
-            self._add_flow(dp, 0, match, actions)
+            self._add_flow(dp, match, actions)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
@@ -123,32 +235,18 @@ class DpiRestApi(RestStatsApi):
             eth_type=0x86dd,
             ipv6_dst=('ff02::','ffff:ffff:ffff:ffff::'))
         actions = [dp.ofproto_parser.OFPActionOutput(dp.ofproto.OFPP_FLOOD)]
-        self._flowmod(dp, match, actions)
+        self._add_flow(dp, match, actions)
 
         match = dp.ofproto_parser.OFPMatch(
             eth_type=0x86dd,
             in_port=1,
             ipv6_dst='fe80::200:ff:fe00:2')
         actions = [dp.ofproto_parser.OFPActionOutput(2)]
-        self._flowmod(dp, match, actions)
+        self._add_flow(dp, match, actions)
 
         match = dp.ofproto_parser.OFPMatch(
             eth_type=0x86dd,
             in_port=2,
             ipv6_dst='fe80::200:ff:fe00:1')
         actions = [dp.ofproto_parser.OFPActionOutput(1)]
-        self._flowmod(dp, match, actions)
-
-    def _flowmod(self, dp, match, actions):
-        ofproto = dp.ofproto
-        inst = [dp.ofproto_parser.OFPInstructionActions(
-                ofproto.OFPIT_APPLY_ACTIONS, actions)]
-        mod = dp.ofproto_parser.OFPFlowMod(
-            datapath=dp, cookie=0x1, cookie_mask=0, table_id=0,
-            command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
-            priority=100, buffer_id=ofproto.OFP_NO_BUFFER,
-            out_port=ofproto.OFPP_ANY,
-            out_group=ofproto.OFPG_ANY,
-            flags=0, match=match, instructions=inst)
-        dp.send_msg(mod)
-        dp.send_barrier()
+        self._add_flow(dp, match, actions)

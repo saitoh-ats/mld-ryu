@@ -25,42 +25,43 @@ from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 from ryu.app.ofctl_rest import StatsController, RestStatsApi
-from ryu.app.wsgi import ControllerBase
+from ryu.app.wsgi import ControllerBase, route
 
 
 LOG = logging.getLogger(__name__)
 
 
 class StatsController(ControllerBase):
+    @route('dpi', '/dpi/flow', methods=['PUT'])
     def test(self, req, **_kwargs):
         LOG.debug(("--test--", self, "dir", dir(self), "req", req, "req.body", req.body, "kwargs", _kwargs))
         try:
-            flow = eval(req.body)
-        except SyntaxError:
+            dpi = eval(req.body)['dpi']
+        except:
             LOG.debug('invalid syntax %s', req.body)
-            return Response(status=400)
-        LOG.debug(("--test--", req.body, "flow", flow))
-
+            err_body = {
+                "err_msg" : "invalid syntax at body",
+                "body" : req.body
+            }
+            return Response(status=400, body=str(err_body))
+        LOG.debug(("--test--", req.body, "dpi", dpi))
+        return Response(status=200, body=req.body)
 
 
 class DpiRestApi(RestStatsApi):
+    OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
+
     def __init__(self, *args, **kwargs):
         super(DpiRestApi, self).__init__(*args, **kwargs)
-        #RestStatsApi.__init__(self, *args, **kwargs)
-        self.mac_to_port = {}
+
+        LOG.debug(("OFP_VERSIONS=", self.OFP_VERSIONS))
 
         wsgi = kwargs['wsgi']
-        mapper = wsgi.mapper
-        wsgi.registory['StatsController'] = self.data
-        path = '/stats'
+        wsgi.register(StatsController)
 
-
+        LOG.debug(("##### DPI #####","**args", args, "**kwargs", kwargs))
         LOG.debug(("##### DPI #####","**CONTEXTS",self._CONTEXTS,"**dpset",self.dpset, "**data",self.data))
-
-        uri = path + '/test'
-        mapper.connect('stats', uri,
-                       controller=StatsController, action='test',
-                       conditions=dict(method=['PUT']))
+        LOG.debug(("##### DPI #####","**dpset get",self.dpset.get_all()))
 
     def _add_flow(self, datapath, priority, match, actions):
         ofproto = datapath.ofproto
@@ -79,46 +80,23 @@ class DpiRestApi(RestStatsApi):
         ofproto = dp.ofproto
         parser = dp.ofproto_parser
         match = parser.OFPMatch()
-        actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
-            ofproto.OFPCML_NO_BUFFER)]
-        self._add_flow(dp, 0, match, actions)
+
+        if dp.ofproto.OFP_VERSION == ofproto_v1_3.OFP_VERSION:
+            actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
+                ofproto.OFPCML_NO_BUFFER)]
+            self._add_flow(dp, 0, match, actions)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         msg = ev.msg
-        datapath = msg.datapath
-        ofproto = datapath.ofproto
+        dpid = msg.datapath.id
         in_port = msg.match['in_port']
-
         pkt = packet.Packet(msg.data)
-        eth = pkt.get_protocols(ethernet.ethernet)[0]
 
-        dst = eth.dst
-        src = eth.src
-
-        dpid = datapath.id
-        self.mac_to_port.setdefault(dpid, {})
-
-        self.logger.debug("packet in %s %s %s %s", dpid, src, dst, in_port)
-
-        # learn a mac address to avoid FLOOD next time.
-        self.mac_to_port[dpid][src] = in_port
-
-        if dst in self.mac_to_port[dpid]:
-            out_port = self.mac_to_port[dpid][dst]
-        else:
-            out_port = ofproto.OFPP_FLOOD
-
-        actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
-
-        # install a flow to avoid packet_in next time
-        #if out_port != ofproto.OFPP_FLOOD:
-        #    self.add_flow(datapath, in_port, dst, actions)
-
-        out = datapath.ofproto_parser.OFPPacketOut(
-            datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
-            actions=actions)
-        #datapath.send_msg(out)
+        LOG.debug("-------------------packet in--------")
+        LOG.debug("packet in dpid=%s, in_port=%s", dpid, in_port)
+        LOG.debug(str(pkt))
+        LOG.debug("------------------------------------")
 
     @set_ev_cls(dpset.EventDP)
     def _handler_datapath(self, ev):

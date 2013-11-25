@@ -32,20 +32,31 @@ LOG = logging.getLogger(__name__)
 
 
 class StatsController(ControllerBase):
+    DPI_REST_LIST = { 'dpi' : ['on', 'off'] }
+
+    def _dpi_res(self, status, body, err_msg=None):
+        if err_msg:
+            _dpi_body = { 'err_msg' : err_msg, 'body' : body }
+            LOG.debug('REST-ERR: %s: %s', err_msg, str(body))
+        else:
+            _dpi_body = body
+        return Response(content_type='application/json', status=status,
+            body=str(_dpi_body))
+
     @route('dpi', '/dpi/flow', methods=['PUT'])
     def test(self, req, **_kwargs):
-        LOG.debug(("--test--", self, "dir", dir(self), "req", req, "req.body", req.body, "kwargs", _kwargs))
+        body = req.body
         try:
-            dpi = eval(req.body)['dpi']
+            dpi = eval(body)['dpi']
         except:
-            LOG.debug('invalid syntax %s', req.body)
-            err_body = {
-                "err_msg" : "invalid syntax at body",
-                "body" : req.body
-            }
-            return Response(status=400, body=str(err_body))
-        LOG.debug(("--test--", req.body, "dpi", dpi))
-        return Response(status=200, body=req.body)
+            err_msg = "invalid syntax at body"
+            return self._dpi_res(400, body, err_msg)
+
+        if dpi not in self.DPI_REST_LIST['dpi']:
+            err_msg = "invalid value at dpi"
+            return self._dpi_res(400, body, err_msg)
+
+        return self._dpi_res(200, body)
 
 
 class DpiRestApi(RestStatsApi):

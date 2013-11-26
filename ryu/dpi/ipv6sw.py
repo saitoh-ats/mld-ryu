@@ -31,23 +31,49 @@ from ryu.lib import ofctl_v1_3
 
 
 LOG = logging.getLogger(__name__)
-FLOW_1 = {
-    'match': {'in_port': 1},
+PIN = {
     'actions': [{'type': 'OUTPUT', 'port': 0xfffffffd, 'max_len': 65535}]
+    }
+
+FLOW_1 = {
+    'cookie': 1,
+    'priority': 100,
+    'match': {'eth_type': 0x0800, 'in_port': 1},
+    'actions': [{'type': 'OUTPUT', 'port': 2}]
     }
 FLOW_2 = {
-    'match': {'in_port': 2},
-    'actions': [{'type': 'OUTPUT', 'port': 0xfffffffd, 'max_len': 65535}]
-    }
-FLIST_OFF = {'1': [FLOW_1]}
-FLIST_ON = {'1': [FLOW_2]}
-DPI_FLOW = {'off': FLIST_OFF, 'on': FLIST_ON}
-IPV6FLOW = {
     'cookie': 1,
-    'priority': 99,
+    'priority': 100,
+    'match': {'eth_type': 0x0800, 'in_port': 2},
+    'actions': [{'type': 'OUTPUT', 'port': 1}]
+    }
+FLOW_3 = {
+    'cookie': 1,
+    'priority': 100,
+    'match': {'eth_type': 0x0806, 'in_port': 2},
+    'actions': [{'type': 'OUTPUT', 'port': 0xfffffffb}]
+    }
+FLIST = {1: [FLOW_1, FLOW_2, FLOW_3]}
+IPV6FLOW = {
+    'cookie': 2,
+    'priority': 200,
     'match': {'eth_type': 0x86dd, 'ipv6_dst': ['ff02::','ffff:ffff:ffff:ffff::']},
     'actions': [{'type': 'OUTPUT', 'port': 0xfffffffb}]
     }
+IPV6FLOW2 = {
+    'cookie': 2,
+    'priority': 200,
+    'match': {'in_port': 1, 'eth_type': 0x86dd, 'ipv6_dst': 'fe80::200:ff:fe00:2'},
+    'actions': [{'type': 'OUTPUT', 'port': 2}]
+    }
+IPV6FLOW3 = {
+    'cookie': 2,
+    'priority': 200,
+    'match': {'in_port': 2, 'eth_type': 0x86dd, 'ipv6_dst': 'fe80::200:ff:fe00:1'},
+    'actions': [{'type': 'OUTPUT', 'port': 1}]
+    }
+IPV6LIST = {1: [IPV6FLOW, IPV6FLOW2, IPV6FLOW3]}
+IPV6DPI = {'on': IPV6LIST, 'off': FLIST}
 
 
 def to_match(dp, attrs):
@@ -80,7 +106,6 @@ def mod_flow_entry(dp, flow, cmd):
         flags, match, inst)
 
     dp.send_msg(flow_mod)
-    dp.send_barrier()
 
 
 class StringifyFlow(StringifyMixin):
@@ -196,12 +221,25 @@ class DpiStatsController(StatsController):
             err_msg = "dp is None"
             return self._dpi_res(500, body, err_msg)
 
-        self.dpirestapi._define_flow(dp)
+        #self.dpirestapi._define_flow(dp)
+        self.dpi_mod_flow(dpi_cmd)
 
         return self._dpi_res(200, body)
 
     def dpi_mod_flow(self, dpi_cmd):
-        pass
+        dpi_flow = IPV6DPI
+        flow_list = dpi_flow['on']
+        for dpid, flows in flow_list.items():
+            LOG.debug(("----dpi_mod_flow----", dpid, flows))
+            dp = self.dpset.get(dpid)
+            if dpi_cmd == 'on':
+                cmd = dp.ofproto.OFPFC_ADD
+            elif dpi_cmd == 'off':
+                cmd = dp.ofproto.OFPFC_DELETE
+            for flow in flows:
+                 mod_flow_entry(dp, flow, cmd)
+
+            dp.send_barrier()
 
 
 class DpiRestApi(RestStatsApi):
@@ -267,14 +305,19 @@ class DpiRestApi(RestStatsApi):
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def _switch_features_handler(self, ev):
         dp = ev.msg.datapath
-        ofproto = dp.ofproto
-        parser = dp.ofproto_parser
-        match = parser.OFPMatch()
+        dpid = dp.id
+        #ofproto = dp.ofproto
+        #parser = dp.ofproto_parser
+        #match = parser.OFPMatch()
 
         if dp.ofproto.OFP_VERSION == ofproto_v1_3.OFP_VERSION:
-            actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
-                ofproto.OFPCML_NO_BUFFER)]
-            self._add_flow(dp, match, actions)
+            #actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
+            #    ofproto.OFPCML_NO_BUFFER)]
+            #self._add_flow(dp, match, actions)
+            flow = PIN
+            print flow
+            cmd = dp.ofproto.OFPFC_ADD
+            mod_flow_entry(dp, flow, cmd)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
@@ -296,10 +339,12 @@ class DpiRestApi(RestStatsApi):
             LOG.debug("dpid=%s, xid=%s, ports=%s", dp.id, dp.xid, dp.ports)
             LOG.debug("-------------------add flow--------")
 
-            flow = FLOW_1
-            print flow
+            flow_list = IPV6DPI['off']
+            flows = flow_list[dp.id]
             cmd = dp.ofproto.OFPFC_ADD
-            mod_flow_entry(dp, flow, cmd)
+            for flow in flows:
+                 mod_flow_entry(dp, flow, cmd)
+                 print flow
 
     def _define_flow(self, dp):
         flow = IPV6FLOW
@@ -313,10 +358,6 @@ class DpiRestApi(RestStatsApi):
         actions = [dp.ofproto_parser.OFPActionOutput(dp.ofproto.OFPP_FLOOD)]
         #self._add_flow(dp, match, actions, 1, 99)
 
-        match = dp.ofproto_parser.OFPMatch(
-            eth_type=0x86dd,
-            in_port=1,
-            ipv6_dst='fe80::200:ff:fe00:2')
         actions = [dp.ofproto_parser.OFPActionOutput(2)]
         #self._add_flow(dp, match, actions, 1, 99)
 

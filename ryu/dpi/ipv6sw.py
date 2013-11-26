@@ -27,26 +27,74 @@ from ryu.lib.packet import ethernet
 from ryu.app.ofctl_rest import StatsController, RestStatsApi
 from ryu.app.wsgi import ControllerBase, route
 from ryu.ofproto.ofproto_parser import StringifyMixin
+from ryu.lib import ofctl_v1_3
 
 
 LOG = logging.getLogger(__name__)
-JSON = {'cookie': 1, 'priority': 99,
-    'match': [{'in_port': 1}],
-    'instructions': [{'output': 2}]
+FLOW_1 = {
+    'match': {'in_port': 1},
+    'actions': [{'type': 'OUTPUT', 'port': 0xfffffffd, 'max_len': 65535}]
     }
+FLOW_2 = {
+    'match': {'in_port': 2},
+    'actions': [{'type': 'OUTPUT', 'port': 0xfffffffd, 'max_len': 65535}]
+    }
+FLIST_OFF = {'1': [FLOW_1]}
+FLIST_ON = {'1': [FLOW_2]}
+DPI_FLOW = {'off': FLIST_OFF, 'on': FLIST_ON}
+IPV6FLOW = {
+    'cookie': 1,
+    'priority': 99,
+    'match': {'eth_type': 0x86dd, 'ipv6_dst': ['ff02::','ffff:ffff:ffff:ffff::']},
+    'actions': [{'type': 'OUTPUT', 'port': 0xfffffffb}]
+    }
+
+
+def to_match(dp, attrs):
+    try:
+        match = dp.ofproto_parser.OFPMatch(**attrs)
+    except Exception as e:
+        match = dp.ofproto_parser.OFPMatch()
+        LOG.debug("Match-ERR: %s", e.message)
+
+    LOG.debug(("-----to_match-----", match.to_jsondict()))
+    return match
+
+def mod_flow_entry(dp, flow, cmd):
+    cookie = int(flow.get('cookie', 0))
+    cookie_mask = int(flow.get('cookie_mask', 0))
+    table_id = int(flow.get('table_id', 0))
+    idle_timeout = int(flow.get('idle_timeout', 0))
+    hard_timeout = int(flow.get('hard_timeout', 0))
+    priority = int(flow.get('priority', 0))
+    buffer_id = int(flow.get('buffer_id', dp.ofproto.OFP_NO_BUFFER))
+    out_port = int(flow.get('out_port', dp.ofproto.OFPP_ANY))
+    out_group = int(flow.get('out_group', dp.ofproto.OFPG_ANY))
+    flags = int(flow.get('flags', 0))
+    match = to_match(dp, flow.get('match', {}))
+    inst = ofctl_v1_3.to_actions(dp, flow.get('actions', []))
+
+    flow_mod = dp.ofproto_parser.OFPFlowMod(
+        dp, cookie, cookie_mask, table_id, cmd, idle_timeout,
+        hard_timeout, priority, buffer_id, out_port, out_group,
+        flags, match, inst)
+
+    dp.send_msg(flow_mod)
+    dp.send_barrier()
+
 
 class StringifyFlow(StringifyMixin):
     """
     """
     def __init__(self, cookie=0, priority=0, idle_timeout=0, hard_timeout=0,
-                 match=None, instructions=[]):
+                 match=None, actions=[]):
         super(StringifyFlow, self).__init__()
         self.cookie = cookie
         self.priority = priority
         self.idle_timeout = idle_timeout
         self.hard_timeout = hard_timeout
         self.match = match
-        self.instructions = instructions
+        self.actions = actions
 
 
 class Flow(dict):
@@ -70,7 +118,7 @@ class Flow(dict):
         self.__setitem__('cookie', 0)
         self.__setitem__('priority', 0)
         self.__setitem__('match', match)
-        #self.__setitem__('actions', actions)
+        self.__setitem__('actions', actions)
         self.__setitem__('instructions', instructions)
 
 class FlowList(object):
@@ -111,8 +159,14 @@ class FlowList(object):
 
 
 
-class StatsController(ControllerBase):
+#class StatsController(ControllerBase):
+class DpiStatsController(StatsController):
     DPI_REST_LIST = {'dpi': ['on', 'off']}
+
+    def __init__(self, req, link, data, **config):
+        super(DpiStatsController, self).__init__(req, link, data, **config)
+        self.flowlist = data['flow_list']
+        self.dpirestapi = data['DpiRestApi']
 
     def _dpi_res(self, status, body, err_msg=None):
         if err_msg:
@@ -124,19 +178,30 @@ class StatsController(ControllerBase):
             body=str(_dpi_body))
 
     @route('dpi', '/dpi/flow', methods=['PUT'])
-    def test(self, req, **_kwargs):
+    def dpi_received(self, req, **_kwargs):
         body = req.body
+        LOG.debug(("body", body, "dpset", self.dpset, "waiters", self.waiters, "flowlist", self.flowlist, str(self.flowlist), "RyuApp", self.dpirestapi))
         try:
-            dpi_sw = eval(body)['dpi']
+            dpi_cmd = eval(body)['dpi']
         except:
             err_msg = "invalid syntax at body"
             return self._dpi_res(400, body, err_msg)
 
-        if dpi_sw not in self.DPI_REST_LIST['dpi']:
+        if dpi_cmd not in self.DPI_REST_LIST['dpi']:
             err_msg = "invalid value at dpi"
             return self._dpi_res(400, body, err_msg)
 
+        dp = self.dpset.get(1)
+        if dp is None:
+            err_msg = "dp is None"
+            return self._dpi_res(500, body, err_msg)
+
+        self.dpirestapi._define_flow(dp)
+
         return self._dpi_res(200, body)
+
+    def dpi_mod_flow(self, dpi_cmd):
+        pass
 
 
 class DpiRestApi(RestStatsApi):
@@ -145,21 +210,23 @@ class DpiRestApi(RestStatsApi):
     def __init__(self, *args, **kwargs):
         super(DpiRestApi, self).__init__(*args, **kwargs)
 
-        flow = Flow()
-        sflow = StringifyFlow.from_jsondict(JSON)
+        #flow = Flow()
+        #sflow = StringifyFlow.from_jsondict(JSON)
         flowlist = FlowList()
-        flowlist.add_flows(1,[sflow,flow])
-        print flow
-        print sflow
-        print sflow.to_jsondict()['StringifyFlow']
-        print str(flowlist)
-        print flowlist.get_switches()
-        print flowlist.get_flows(1)
-        print flowlist.get_flows(2)
-        exit()
+        #flowlist.add_flows(1,[sflow,flow])
+        #print flow
+        #print sflow
+        #print sflow.to_jsondict()['StringifyFlow']
+        #print str(flowlist)
+        #print flowlist.get_switches()
+        #print flowlist.get_flows(1)
+        #print flowlist.get_flows(2)
+        #exit()
 
         wsgi = kwargs['wsgi']
-        wsgi.register(StatsController)
+        self.data['flow_list'] = flowlist
+        self.data['DpiRestApi'] = self
+        wsgi.register(DpiStatsController, self.data)
 
         LOG.debug(("##### DPI #####","**args", args, "**kwargs", kwargs))
         LOG.debug(("##### DPI #####","**CONTEXTS",self._CONTEXTS,"**dpset",self.dpset, "**data",self.data))
@@ -228,25 +295,35 @@ class DpiRestApi(RestStatsApi):
             LOG.debug("-------------------dpset--------")
             LOG.debug("dpid=%s, xid=%s, ports=%s", dp.id, dp.xid, dp.ports)
             LOG.debug("-------------------add flow--------")
-            self._define_flow(dp)
+
+            flow = FLOW_1
+            print flow
+            cmd = dp.ofproto.OFPFC_ADD
+            mod_flow_entry(dp, flow, cmd)
 
     def _define_flow(self, dp):
+        flow = IPV6FLOW
+        print flow
+        cmd = dp.ofproto.OFPFC_ADD
+        mod_flow_entry(dp, flow, cmd)
+
         match = dp.ofproto_parser.OFPMatch(
             eth_type=0x86dd,
             ipv6_dst=('ff02::','ffff:ffff:ffff:ffff::'))
         actions = [dp.ofproto_parser.OFPActionOutput(dp.ofproto.OFPP_FLOOD)]
-        self._add_flow(dp, match, actions)
+        #self._add_flow(dp, match, actions, 1, 99)
 
         match = dp.ofproto_parser.OFPMatch(
             eth_type=0x86dd,
             in_port=1,
             ipv6_dst='fe80::200:ff:fe00:2')
         actions = [dp.ofproto_parser.OFPActionOutput(2)]
-        self._add_flow(dp, match, actions)
+        #self._add_flow(dp, match, actions, 1, 99)
 
         match = dp.ofproto_parser.OFPMatch(
             eth_type=0x86dd,
             in_port=2,
             ipv6_dst='fe80::200:ff:fe00:1')
         actions = [dp.ofproto_parser.OFPActionOutput(1)]
-        self._add_flow(dp, match, actions)
+        #self._add_flow(dp, match, actions, 1, 99)
+

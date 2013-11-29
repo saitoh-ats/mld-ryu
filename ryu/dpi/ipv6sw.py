@@ -30,14 +30,13 @@ from ryu.ofproto.ofproto_parser import StringifyMixin
 
 
 LOG = logging.getLogger(__name__)
-PIN = {
-    'actions': [{'type': 'OUTPUT', 'port': 0xfffffffd, 'max_len': 65535}]
-    }
+FLOW_PKT_IN = {
+    'actions': [{'type': 'OUTPUT', 'port': 0xfffffffd, 'max_len': 65535}]}
 
 FLOW_1 = {
     'cookie': 1,
     'priority': 100,
-    'match': {'eth_type': 0x0800, 'in_port': 1},
+    'match': {'eth_type': 0x0800, 'inport': 1},
     'actions': [{'type': 'OUTPUT', 'port': 2}]
     }
 FLOW_2 = {
@@ -53,6 +52,7 @@ FLOW_3 = {
     'actions': [{'type': 'OUTPUT', 'port': 0xfffffffb}]
     }
 FLIST = {1: [FLOW_1, FLOW_2, FLOW_3]}
+FLIST[2] = [FLOW_1, FLOW_2, FLOW_3]
 IPV6FLOW = {
     'cookie': 2,
     'priority': 200,
@@ -72,6 +72,7 @@ IPV6FLOW3 = {
     'actions': [{'type': 'OUTPUT', 'port': 1}]
     }
 IPV6LIST = {1: [IPV6FLOW, IPV6FLOW2, IPV6FLOW3]}
+IPV6LIST[2] = [IPV6FLOW, IPV6FLOW2, IPV6FLOW3]
 IPV6DPI = {'on': IPV6LIST, 'off': FLIST}
 
 
@@ -80,9 +81,10 @@ def to_match(dp, attrs):
         match = dp.ofproto_parser.OFPMatch(**attrs)
     except Exception as e:
         match = dp.ofproto_parser.OFPMatch()
-        LOG.error("Match-ERR: %s", e.message)
+        LOG.error("Match-ERR: %s", e)
+        LOG.debug("  --> attrs=%s", attrs)
+        LOG.debug("  --> match=%s", match.to_jsondict())
 
-    LOG.debug(("-----to_match-----", match.to_jsondict()))
     return match
 
 def mod_flow_entry(dp, flow, cmd):
@@ -213,7 +215,14 @@ class DpiStatsController(StatsController):
     @route('dpi', '/dpi/flow', methods=['PUT'])
     def dpi_received(self, req, **_kwargs):
         body = req.body
-        LOG.debug(("body", body, "dpset", self.dpset, "waiters", self.waiters, "flowlist", self.flowlist, str(self.flowlist), "RyuApp", self.dpirestapi))
+        LOG.debug("================ Received REST DPI")
+        LOG.debug("  body=%s", body)
+        LOG.debug("  dpset=%s", self.dpset)
+        LOG.debug("  waiters=%s", self.waiters)
+        LOG.debug("  flowlist=%s", self.flowlist)
+        LOG.debug("  RyuApp=%s", self.dpirestapi)
+
+        # REST Parameter check
         try:
             dpi_cmd = eval(body)['dpi']
         except:
@@ -224,32 +233,26 @@ class DpiStatsController(StatsController):
             err_msg = "invalid value at dpi"
             return self._dpi_res(400, body, err_msg)
 
-        dp = self.dpset.get(1)
-        if dp is None:
-            err_msg = "dp is None"
-            return self._dpi_res(500, body, err_msg)
-
-        self.dpi_mod_flow(dpi_cmd)
-
-        return self._dpi_res(200, body)
-
-    def dpi_mod_flow(self, dpi_cmd):
+        # Datapath check
         dpi_flow = IPV6DPI
         flow_list = dpi_flow['on']
         for dpid, flows in flow_list.items():
             dp = self.dpset.get(dpid)
+            if dp is None:
+                err_msg = "Datapath[dpid=%s] is None" % dpid
+                return self._dpi_res(500, body, err_msg)
+
+            LOG.debug("  --> mod flows [%s] dpid=%s", dpi_cmd, dpid)
+            LOG.debug("      flows=%s", flows)
             if dpi_cmd == 'on':
-                LOG.debug("--------- dpi_mod_flow[on] ---------")
-                LOG.debug("dpid=%s, flow=%s", dpid, flows)
                 add_flows(dp, flows)
-                LOG.debug("------------------------------------")
             elif dpi_cmd == 'off':
-                LOG.debug("--------- dpi_mod_flow[off] --------")
-                LOG.debug("dpid=%s, flow=%s", dpid, flows)
                 del_flows(dp, flows)
-                LOG.debug("------------------------------------")
 
             dp.send_barrier()
+
+        LOG.debug("==================================")
+        return self._dpi_res(200, body)
 
 
 class DpiRestApi(RestStatsApi):
@@ -271,14 +274,18 @@ class DpiRestApi(RestStatsApi):
         #print flowlist.get_flows(2)
         #exit()
 
+        LOG.debug("=================== REST-API(init)")
+        LOG.debug("  args=%s, kwargs=%s", args, kwargs)
+
         wsgi = kwargs['wsgi']
         self.data['flow_list'] = flowlist
         self.data['DpiRestApi'] = self
         wsgi.register(DpiStatsController, self.data)
 
-        LOG.debug(("##### DPI #####","**args", args, "**kwargs", kwargs))
-        LOG.debug(("##### DPI #####","**CONTEXTS",self._CONTEXTS,"**dpset",self.dpset, "**data",self.data))
-        LOG.debug(("##### DPI #####","**dpset get",self.dpset.get_all()))
+        LOG.debug("  CONTEXTS=%s", self._CONTEXTS)
+        LOG.debug("  dpset=%s", self.dpset)
+        LOG.debug("  data=%s", self.data)
+        LOG.debug("==================================")
 
     def _del_flow(self, flow_stats):
         match = flow_stats.match
@@ -296,18 +303,16 @@ class DpiRestApi(RestStatsApi):
     def _switch_features_handler(self, ev):
         dp = ev.msg.datapath
         dpid = dp.id
-        #ofproto = dp.ofproto
-        #parser = dp.ofproto_parser
-        #match = parser.OFPMatch()
-        LOG.debug("-------------------SwitchFeatures--")
-        LOG.debug("dpid=%s, dpset=%s", dpid, self.dpset.get_all())
+        LOG.debug("=================== SwitchFeatures")
+        LOG.debug("  dpid=%s, dpset=%s", dpid, self.dpset.get_all())
 
         if dp.ofproto.OFP_VERSION == ofproto_v1_3.OFP_VERSION:
-            LOG.debug("-------------------add flow---------")
-            flows = [PIN]
+            flows = [FLOW_PKT_IN]
+            LOG.debug("  --> add flows dpid=%s", dpid)
+            LOG.debug("      flows=%s", flows)
             add_flows(dp, flows)
-            LOG.debug(flows)
-            LOG.debug("------------------------------------")
+
+        LOG.debug("==================================")
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
@@ -316,21 +321,23 @@ class DpiRestApi(RestStatsApi):
         in_port = msg.match['in_port']
         pkt = packet.Packet(msg.data)
 
-        LOG.debug("-------------------packet in--------")
-        LOG.debug("packet in dpid=%s, in_port=%s", dpid, in_port)
-        LOG.debug(str(pkt))
-        LOG.debug("------------------------------------")
+        LOG.debug("======================== Packet-in")
+        LOG.debug("  -->dpid=%s, in_port=%s", dpid, in_port)
+        LOG.debug("     packet=%s", str(pkt))
+        LOG.debug("==================================")
 
     @set_ev_cls(dpset.EventDP)
     def _handler_datapath(self, ev):
         if ev.enter:
             dp = ev.dp
-            LOG.debug("-------------------dpset------------")
-            LOG.debug("dpid=%s, xid=%s, dpset=%s", dp.id, dp.xid, self.dpset.get_all())
+            dpid = dp.id
+            LOG.debug("==================== dpset EventDP")
+            LOG.debug("  dpid=%s, xid=%s, dpset=%s",
+                dpid, dp.xid, self.dpset.get_all())
 
-            LOG.debug("-------------------add flow---------")
             flow_list = IPV6DPI['off']
             flows = flow_list[dp.id]
+            LOG.debug("  --> add flows dpid=%s", dpid)
+            LOG.debug("      flows=%s", flows)
             add_flows(dp, flows)
-            LOG.debug(flows)
-            LOG.debug("------------------------------------")
+            LOG.debug("==================================")

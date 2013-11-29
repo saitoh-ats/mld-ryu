@@ -22,6 +22,7 @@ from ryu.controller import ofp_event, dpset
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
+from ryu.lib import hub
 from ryu.lib import ofctl_v1_3
 from ryu.lib.packet import packet
 from ryu.app.ofctl_rest import StatsController, RestStatsApi
@@ -30,6 +31,8 @@ from ryu.ofproto.ofproto_parser import StringifyMixin
 
 
 LOG = logging.getLogger(__name__)
+
+BARRIER_REPLY_TIMER = 2.0 # sec
 FLOW_PKT_IN = {
     'actions': [{'type': 'OUTPUT', 'port': 0xfffffffd, 'max_len': 65535}]}
 
@@ -81,7 +84,7 @@ def to_match(dp, attrs):
         match = dp.ofproto_parser.OFPMatch(**attrs)
     except Exception as e:
         match = dp.ofproto_parser.OFPMatch()
-        LOG.error("Match-ERR: %s", e)
+        LOG.error("### Match-ERR: %s", e)
         LOG.debug("  --> attrs=%s", attrs)
         LOG.debug("  --> match=%s", match.to_jsondict())
 
@@ -209,10 +212,40 @@ class DpiStatsController(StatsController):
         self.flowlist = data['flow_list']
         self.dpirestapi = data['DpiRestApi']
 
-    def _dpi_res(self, status, body, err_msg=None):
+    def _wait_barrier(self, dp):
+        barrier = dp.ofproto_parser.OFPBarrierRequest(dp)
+        dp.set_xid(barrier)
+        waiters_per_dp = self.waiters.setdefault(dp.id, {})
+        event = hub.Event()
+        waiters_per_dp[barrier.xid] = event
+        LOG.debug("<================= Barrier Request")
+        LOG.debug("dpid=%s xid=%s", dp.id, barrier.xid)
+	LOG.debug("==================================")
+        dp.send_msg(barrier)
+
+        ret = event.wait(timeout=BARRIER_REPLY_TIMER)
+        if not ret:
+            del waiters_per_dp[barrier.xid]
+
+        return ret
+
+    def _dpi_flows_cmd(self, dp, flows, cmd):
+        if cmd == 'on':
+            LOG.debug("<=================== Flow-Mod(ADD)")
+            add_flows(dp, flows)
+        elif cmd == 'off':
+            LOG.debug("<================ Flow-Mod(DELETE)")
+            del_flows(dp, flows)
+
+        LOG.debug("dpid=%s", dp.id)
+        LOG.debug("flows=%s", flows)
+	LOG.debug("==================================")
+        return self._wait_barrier(dp)
+
+    def _dpi_response(self, status, body, err_msg=None):
         if err_msg:
             _dpi_body = {'err_msg': err_msg, 'body': body}
-            LOG.info('REST-ERR: %s: %s', err_msg, str(body))
+            LOG.info('### REST-ERR: %s: %s', err_msg, str(body))
         else:
             _dpi_body = body
         return Response(content_type='application/json', status=status,
@@ -222,43 +255,43 @@ class DpiStatsController(StatsController):
     def dpi_received(self, req, **_kwargs):
         body = req.body
         LOG.debug("================ Received REST DPI")
-        LOG.debug("  body=%s", body)
-        LOG.debug("  dpset=%s", self.dpset)
-        LOG.debug("  waiters=%s", self.waiters)
-        LOG.debug("  flowlist=%s", self.flowlist)
-        LOG.debug("  RyuApp=%s", self.dpirestapi)
+        LOG.debug("body=%s", body)
+        LOG.debug("dpset=%s", self.dpset)
+        LOG.debug("waiters=%s", self.waiters)
+        LOG.debug("flowlist=%s", self.flowlist)
+        LOG.debug("RyuApp=%s", self.dpirestapi)
+        LOG.debug("==================================")
 
         # REST Parameter check
         try:
             dpi_cmd = eval(body)['dpi']
         except:
             err_msg = "invalid syntax at body"
-            return self._dpi_res(400, body, err_msg)
+            return self._dpi_response(400, body, err_msg)
 
         if dpi_cmd not in self.DPI_REST_LIST['dpi']:
             err_msg = "invalid value at dpi"
-            return self._dpi_res(400, body, err_msg)
+            return self._dpi_response(400, body, err_msg)
 
         # Datapath check
+        # Todo: flow_list.dpcheck(dpset)
+        # if not ...
         dpi_flow = IPV6DPI
         flow_list = dpi_flow['on']
         for dpid, flows in flow_list.items():
             dp = self.dpset.get(dpid)
             if dp is None:
                 err_msg = "Datapath[dpid=%s] is None" % dpid
-                return self._dpi_res(500, body, err_msg)
+                return self._dpi_response(500, body, err_msg)
 
-            LOG.debug("  --> mod flows [%s] dpid=%s", dpi_cmd, dpid)
-            LOG.debug("      flows=%s", flows)
-            if dpi_cmd == 'on':
-                add_flows(dp, flows)
-            elif dpi_cmd == 'off':
-                del_flows(dp, flows)
+        for dpid, flows in flow_list.items():
+            dp = self.dpset.get(dpid)
+            if not self._dpi_flows_cmd(dp, flows, dpi_cmd):
+                err_msg = "BarrierRequest Timeout. [dpid=%s]" % dp.id
+                LOG.error(err_msg)
+                return self._dpi_response(500, body, err_msg)
 
-            dp.send_barrier()
-
-        LOG.debug("==================================")
-        return self._dpi_res(200, body)
+        return self._dpi_response(200, body)
 
 
 class DpiRestApi(RestStatsApi):
@@ -281,69 +314,71 @@ class DpiRestApi(RestStatsApi):
         #exit()
 
         LOG.debug("=================== REST-API(init)")
-        LOG.debug("  args=%s, kwargs=%s", args, kwargs)
+        LOG.debug("args=%s, kwargs=%s", args, kwargs)
 
         wsgi = kwargs['wsgi']
         self.data['flow_list'] = flowlist
         self.data['DpiRestApi'] = self
         wsgi.register(DpiStatsController, self.data)
 
-        LOG.debug("  CONTEXTS=%s", self._CONTEXTS)
-        LOG.debug("  dpset=%s", self.dpset)
-        LOG.debug("  data=%s", self.data)
+        LOG.debug("CONTEXTS=%s", self._CONTEXTS)
+        LOG.debug("dpset=%s", self.dpset)
+        LOG.debug("data=%s", self.data)
         LOG.debug("==================================")
-
-    def _del_flow(self, flow_stats):
-        match = flow_stats.match
-        cookie = flow_stats.cookie
-        cmd = self.dp.ofproto.OFPFC_DELETE_STRICT
-        priority = flow_stats.priority
-        actions = []
-
-        flow_mod = self.dp.ofproto_parser.OFPFlowMod(
-            self.dp, match, cookie, cmd, priority=priority, actions=actions)
-        self.dp.send_msg(flow_mod)
-        self.logger.info('Delete flow [cookie=0x%x]', cookie, extra=self.sw_id)
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def _switch_features_handler(self, ev):
-        dp = ev.msg.datapath
-        dpid = dp.id
-        LOG.debug("=================== SwitchFeatures")
-        LOG.debug("  dpid=%s, dpset=%s", dpid, self.dpset.get_all())
+        msg = ev.msg
+        dp = msg.datapath
+        LOG.debug("==================> SwitchFeatures")
+        LOG.debug("dpid=%s, dpset=%s", dp.id, self.dpset.get_all())
 
         if dp.ofproto.OFP_VERSION == ofproto_v1_3.OFP_VERSION:
             flows = [FLOW_PKT_IN]
-            LOG.debug("  --> add flows dpid=%s", dpid)
-            LOG.debug("      flows=%s", flows)
+            LOG.debug("add flows dpid=%s", dp.id)
+            LOG.debug("flows=%s", flows)
             add_flows(dp, flows)
 
-        LOG.debug("==================================")
-
-    @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
-    def _packet_in_handler(self, ev):
-        msg = ev.msg
-        dpid = msg.datapath.id
-        in_port = msg.match['in_port']
-        pkt = packet.Packet(msg.data)
-
-        LOG.debug("======================== Packet-in")
-        LOG.debug("  -->dpid=%s, in_port=%s", dpid, in_port)
-        LOG.debug("     packet=%s", str(pkt))
         LOG.debug("==================================")
 
     @set_ev_cls(dpset.EventDP)
     def _handler_datapath(self, ev):
         if ev.enter:
             dp = ev.dp
-            dpid = dp.id
-            LOG.debug("==================== dpset EventDP")
-            LOG.debug("  dpid=%s, xid=%s, dpset=%s",
-                dpid, dp.xid, self.dpset.get_all())
+            LOG.debug("===================> dpset EventDP")
+            LOG.debug("dpid=%s, xid=%s, dpset=%s",
+                dp.id, dp.xid, self.dpset.get_all())
 
             flow_list = IPV6DPI['off']
             flows = flow_list[dp.id]
-            LOG.debug("  --> add flows dpid=%s", dpid)
-            LOG.debug("      flows=%s", flows)
+            LOG.debug("add flows dpid=%s", dp.id)
+            LOG.debug("flows=%s", flows)
             add_flows(dp, flows)
             LOG.debug("==================================")
+
+    @set_ev_cls(ofp_event.EventOFPBarrierReply, MAIN_DISPATCHER)
+    def _barrier_reply_handler(self, ev):
+        msg = ev.msg
+        dp = msg.datapath
+        LOG.debug("===================> Barrier Reply")
+        LOG.debug("dpid=%s, msg=%s", dp.id, msg)
+	LOG.debug("==================================")
+
+        if (dp.id not in self.waiters
+                or msg.xid not in self.waiters[dp.id]):
+            return
+
+        event = self.waiters[dp.id][msg.xid]
+        del self.waiters[dp.id][msg.xid]
+        event.set()
+
+    @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
+    def _packet_in_handler(self, ev):
+	msg = ev.msg
+	dp = msg.datapath
+	in_port = msg.match['in_port']
+	pkt = packet.Packet(msg.data)
+	LOG.debug("=======================> Packet-in")
+	LOG.debug("dpid=%s, in_port=%s", dp.id, in_port)
+        LOG.debug("packet=%s", str(pkt))
+        LOG.debug("==================================")

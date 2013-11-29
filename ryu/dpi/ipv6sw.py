@@ -32,7 +32,7 @@ from ryu.ofproto.ofproto_parser import StringifyMixin
 
 LOG = logging.getLogger(__name__)
 
-BARRIER_REPLY_TIMER = 2.0 # sec
+BARRIER_REPLY_TIMER = 2.0  # sec
 FLOW_PKT_IN = {
     'actions': [{'type': 'OUTPUT', 'port': 0xfffffffd, 'max_len': 65535}]}
 
@@ -59,7 +59,7 @@ FLIST[2] = [FLOW_1, FLOW_2, FLOW_3]
 IPV6FLOW = {
     'cookie': 2,
     'priority': 200,
-    'match': {'eth_type': 0x86dd, 'ipv6_dst': ['ff02::','ffff:ffff:ffff:ffff::']},
+    'match': {'eth_type': 0x86dd, 'ipv6_dst': ['ff02::', 'ffff:ffff:ffff:ffff::']},
     'actions': [{'type': 'OUTPUT', 'port': 0xfffffffb}]
     }
 IPV6FLOW2 = {
@@ -90,6 +90,7 @@ def to_match(dp, attrs):
 
     return match
 
+
 def mod_flow_entry(dp, flow, cmd):
     cookie = int(flow.get('cookie', 0))
     cookie_mask = int(flow.get('cookie_mask', 0))
@@ -114,18 +115,18 @@ def mod_flow_entry(dp, flow, cmd):
 def add_flows(dp, flows):
     cmd = dp.ofproto.OFPFC_ADD
     for flow in flows:
-         mod_flow_entry(dp, flow, cmd)
+        mod_flow_entry(dp, flow, cmd)
 
 def del_flows(dp, flows):
     cmd = dp.ofproto.OFPFC_DELETE
     for flow in flows:
-         mod_flow_entry(dp, flow, cmd)
+        mod_flow_entry(dp, flow, cmd)
 
 def del_cookies(dp, cookies):
     cmd = dp.ofproto.OFPFC_DELETE
     for cookie in cookies:
-         flow = {'cookie': cookie, 'cookie_mask': 65535}
-         mod_flow_entry(dp, flow, cmd)
+        flow = {'cookie': cookie, 'cookie_mask': 65535}
+        mod_flow_entry(dp, flow, cmd)
 
 
 class StringifyFlow(StringifyMixin):
@@ -201,7 +202,6 @@ class FlowList(object):
 
     def __str__(self):
         return str(self.flowlist)
-
 
 
 class DpiStatsController(StatsController):

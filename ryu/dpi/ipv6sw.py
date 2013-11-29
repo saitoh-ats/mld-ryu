@@ -112,15 +112,18 @@ def mod_flow_entry(dp, flow, cmd):
 
     dp.send_msg(flow_mod)
 
+
 def add_flows(dp, flows):
     cmd = dp.ofproto.OFPFC_ADD
     for flow in flows:
         mod_flow_entry(dp, flow, cmd)
 
+
 def del_flows(dp, flows):
     cmd = dp.ofproto.OFPFC_DELETE
     for flow in flows:
         mod_flow_entry(dp, flow, cmd)
+
 
 def del_cookies(dp, cookies):
     cmd = dp.ofproto.OFPFC_DELETE
@@ -220,7 +223,7 @@ class DpiStatsController(StatsController):
         waiters_per_dp[barrier.xid] = event
         LOG.debug("<================= Barrier Request")
         LOG.debug("dpid=%s xid=%s", dp.id, barrier.xid)
-	LOG.debug("==================================")
+        LOG.debug("==================================")
         dp.send_msg(barrier)
 
         ret = event.wait(timeout=BARRIER_REPLY_TIMER)

@@ -36,7 +36,7 @@ FLOW_PKT_IN = {
 FLOW_1 = {
     'cookie': 1,
     'priority': 100,
-    'match': {'eth_type': 0x0800, 'inport': 1},
+    'match': {'eth_type': 0x0800, 'in_port': 1},
     'actions': [{'type': 'OUTPUT', 'port': 2}]
     }
 FLOW_2 = {
@@ -116,6 +116,12 @@ def add_flows(dp, flows):
 def del_flows(dp, flows):
     cmd = dp.ofproto.OFPFC_DELETE
     for flow in flows:
+         mod_flow_entry(dp, flow, cmd)
+
+def del_cookies(dp, cookies):
+    cmd = dp.ofproto.OFPFC_DELETE
+    for cookie in cookies:
+         flow = {'cookie': cookie, 'cookie_mask': 65535}
          mod_flow_entry(dp, flow, cmd)
 
 

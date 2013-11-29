@@ -170,6 +170,7 @@ class Flow(dict):
         self.__setitem__('actions', actions)
         self.__setitem__('instructions', instructions)
 
+
 class FlowList(object):
     """
     flowlist = {'<dpid>': [flow, ...], ...}
@@ -242,7 +243,7 @@ class DpiStatsController(StatsController):
 
         LOG.debug("dpid=%s", dp.id)
         LOG.debug("flows=%s", flows)
-	LOG.debug("==================================")
+        LOG.debug("==================================")
         return self._wait_barrier(dp)
 
     def _dpi_response(self, status, body, err_msg=None):
@@ -365,7 +366,7 @@ class DpiRestApi(RestStatsApi):
         dp = msg.datapath
         LOG.debug("===================> Barrier Reply")
         LOG.debug("dpid=%s, msg=%s", dp.id, msg)
-	LOG.debug("==================================")
+        LOG.debug("==================================")
 
         if (dp.id not in self.waiters
                 or msg.xid not in self.waiters[dp.id]):
@@ -377,11 +378,11 @@ class DpiRestApi(RestStatsApi):
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
-	msg = ev.msg
-	dp = msg.datapath
-	in_port = msg.match['in_port']
-	pkt = packet.Packet(msg.data)
-	LOG.debug("=======================> Packet-in")
-	LOG.debug("dpid=%s, in_port=%s", dp.id, in_port)
+        msg = ev.msg
+        dp = msg.datapath
+        in_port = msg.match['in_port']
+        pkt = packet.Packet(msg.data)
+        LOG.debug("=======================> Packet-in")
+        LOG.debug("dpid=%s, in_port=%s", dp.id, in_port)
         LOG.debug("packet=%s", str(pkt))
         LOG.debug("==================================")

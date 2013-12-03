@@ -1,4 +1,4 @@
-# Copyright (C) 2011 Nippon Telegraph and Telephone Corporation.
+# Copyright (C) 2013 Nippon Telegraph and Telephone Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,15 +15,15 @@
 
 import logging
 import struct
-from webob import Response
+import json
+import webob
 
 from ryu.base import app_manager
 from ryu.controller import ofp_event, dpset
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
-from ryu.lib import hub
-from ryu.lib import ofctl_v1_3
+from ryu.lib import hub, ofctl_v1_3
 from ryu.lib.packet import packet
 from ryu.app.ofctl_rest import StatsController, RestStatsApi
 from ryu.app.wsgi import route
@@ -34,49 +34,49 @@ LOG = logging.getLogger(__name__)
 
 BARRIER_REPLY_TIMER = 2.0  # sec
 FLOW_PKT_IN = {
-    'actions': [{'type': 'OUTPUT', 'port': 0xfffffffd, 'max_len': 65535}]}
+    "actions": [{"type": "OUTPUT", "port": 0xfffffffd, "max_len": 65535}]}
 
 FLOW_1 = {
-    'cookie': 1,
-    'priority': 100,
-    'match': {'eth_type': 0x0800, 'in_port': 1},
-    'actions': [{'type': 'OUTPUT', 'port': 2}]
+    "cookie": 1,
+    "priority": 100,
+    "match": {"eth_type": 0x0800, "in_port": 1},
+    "actions": [{"type": "OUTPUT", "port": 2}]
     }
 FLOW_2 = {
-    'cookie': 1,
-    'priority': 100,
-    'match': {'eth_type': 0x0800, 'in_port': 2},
-    'actions': [{'type': 'OUTPUT', 'port': 1}]
+    "cookie": 1,
+    "priority": 100,
+    "match": {"eth_type": 0x0800, "in_port": 2},
+    "actions": [{"type": "OUTPUT", "port": 1}]
     }
 FLOW_3 = {
-    'cookie': 1,
-    'priority': 100,
-    'match': {'eth_type': 0x0806, 'in_port': 2},
-    'actions': [{'type': 'OUTPUT', 'port': 0xfffffffb}]
+    "cookie": 1,
+    "priority": 100,
+    "match": {"eth_type": 0x0806, "in_port": 2},
+    "actions": [{"type": "OUTPUT", "port": 0xfffffffb}]
     }
 FLIST = {1: [FLOW_1, FLOW_2, FLOW_3]}
 FLIST[2] = [FLOW_1, FLOW_2, FLOW_3]
 IPV6FLOW = {
-    'cookie': 2,
-    'priority': 200,
-    'match': {'eth_type': 0x86dd, 'ipv6_dst': ['ff02::', 'ffff:ffff:ffff:ffff::']},
-    'actions': [{'type': 'OUTPUT', 'port': 0xfffffffb}]
+    "cookie": 2,
+    "priority": 200,
+    "match": {"eth_type": 0x86dd, "ipv6_dst": ["ff02::", "ffff:ffff:ffff:ffff::"]},
+    "actions": [{"type": "OUTPUT", "port": 0xfffffffb}]
     }
 IPV6FLOW2 = {
-    'cookie': 2,
-    'priority': 200,
-    'match': {'in_port': 1, 'eth_type': 0x86dd, 'ipv6_dst': 'fe80::200:ff:fe00:2'},
-    'actions': [{'type': 'OUTPUT', 'port': 2}]
+    "cookie": 2,
+    "priority": 200,
+    "match": {"in_port": 1, "eth_type": 0x86dd, "ipv6_dst": "fe80::200:ff:fe00:2"},
+    "actions": [{"type": "OUTPUT", "port": 2}]
     }
 IPV6FLOW3 = {
-    'cookie': 2,
-    'priority': 200,
-    'match': {'in_port': 2, 'eth_type': 0x86dd, 'ipv6_dst': 'fe80::200:ff:fe00:1'},
-    'actions': [{'type': 'OUTPUT', 'port': 1}]
+    "cookie": 2,
+    "priority": 200,
+    "match": {"in_port": 2, "eth_type": 0x86dd, "ipv6_dst": "fe80::200:ff:fe00:1"},
+    "actions": [{"type": "OUTPUT", "port": 1}]
     }
 IPV6LIST = {1: [IPV6FLOW, IPV6FLOW2, IPV6FLOW3]}
 IPV6LIST[2] = [IPV6FLOW, IPV6FLOW2, IPV6FLOW3]
-IPV6DPI = {'on': IPV6LIST, 'off': FLIST}
+IPV6DPI = {"on": IPV6LIST, "off": FLIST}
 
 
 def to_match(dp, attrs):
@@ -92,18 +92,18 @@ def to_match(dp, attrs):
 
 
 def mod_flow_entry(dp, flow, cmd):
-    cookie = int(flow.get('cookie', 0))
-    cookie_mask = int(flow.get('cookie_mask', 0))
-    table_id = int(flow.get('table_id', 0))
-    idle_timeout = int(flow.get('idle_timeout', 0))
-    hard_timeout = int(flow.get('hard_timeout', 0))
-    priority = int(flow.get('priority', 0))
-    buffer_id = int(flow.get('buffer_id', dp.ofproto.OFP_NO_BUFFER))
-    out_port = int(flow.get('out_port', dp.ofproto.OFPP_ANY))
-    out_group = int(flow.get('out_group', dp.ofproto.OFPG_ANY))
-    flags = int(flow.get('flags', 0))
-    match = to_match(dp, flow.get('match', {}))
-    inst = ofctl_v1_3.to_actions(dp, flow.get('actions', []))
+    cookie = int(flow.get("cookie", 0))
+    cookie_mask = int(flow.get("cookie_mask", 0))
+    table_id = int(flow.get("table_id", 0))
+    idle_timeout = int(flow.get("idle_timeout", 0))
+    hard_timeout = int(flow.get("hard_timeout", 0))
+    priority = int(flow.get("priority", 0))
+    buffer_id = int(flow.get("buffer_id", dp.ofproto.OFP_NO_BUFFER))
+    out_port = int(flow.get("out_port", dp.ofproto.OFPP_ANY))
+    out_group = int(flow.get("out_group", dp.ofproto.OFPG_ANY))
+    flags = int(flow.get("flags", 0))
+    match = to_match(dp, flow.get("match", {}))
+    inst = ofctl_v1_3.to_actions(dp, flow.get("actions", []))
 
     flow_mod = dp.ofproto_parser.OFPFlowMod(
         dp, cookie, cookie_mask, table_id, cmd, idle_timeout,
@@ -128,8 +128,13 @@ def del_flows(dp, flows):
 def del_cookies(dp, cookies):
     cmd = dp.ofproto.OFPFC_DELETE
     for cookie in cookies:
-        flow = {'cookie': cookie, 'cookie_mask': 65535}
+        flow = {"cookie": cookie, "cookie_mask": 65535}
         mod_flow_entry(dp, flow, cmd)
+
+
+def load_json(fname, encoding='utf-8'):
+    with open(fname) as f:
+        return json.load(f, encoding)
 
 
 class StringifyFlow(StringifyMixin):
@@ -148,13 +153,13 @@ class StringifyFlow(StringifyMixin):
 
 class Flow(dict):
     """
-    flow = {'cookie': cookie,
-            'priority': priority,
-            'flags': 0,
-            'idle_timeout': 0,
-            'hard_timeout': 0,
-            'match': match,
-            'actions': actions}
+    flow = {"cookie": cookie,
+            "priority": priority,
+            "flags": 0,
+            "idle_timeout": 0,
+            "hard_timeout": 0,
+            "match": match,
+            "actions": actions}
     """
 
     def __init__(self):
@@ -164,23 +169,23 @@ class Flow(dict):
         actions = [{"output": 2}]
         instructions = [{"output": 2}]
 
-        self.__setitem__('cookie', 0)
-        self.__setitem__('priority', 0)
-        self.__setitem__('match', match)
-        self.__setitem__('actions', actions)
-        self.__setitem__('instructions', instructions)
+        self.__setitem__("cookie", 0)
+        self.__setitem__("priority", 0)
+        self.__setitem__("match", match)
+        self.__setitem__("actions", actions)
+        self.__setitem__("instructions", instructions)
 
 
 class FlowList(object):
     """
-    flowlist = {'<dpid>': [flow, ...], ...}
-    flow = {'cookie': cookie,
-            'priority': priority,
-            'flags': 0,
-            'idle_timeout': 0,
-            'hard_timeout': 0,
-            'match': match,
-            'actions': actions}
+    flowlist = {"<dpid>": [flow, ...], ...}
+    flow = {"cookie": cookie,
+            "priority": priority,
+            "flags": 0,
+            "idle_timeout": 0,
+            "hard_timeout": 0,
+            "match": match,
+            "actions": actions}
     """
 
     def __init__(self, filename=None):
@@ -209,12 +214,12 @@ class FlowList(object):
 
 
 class DpiStatsController(StatsController):
-    DPI_REST_LIST = {'dpi': ['on', 'off']}
+    DPI_REST_LIST = {"dpi": ["on", "off"]}
 
     def __init__(self, req, link, data, **config):
         super(DpiStatsController, self).__init__(req, link, data, **config)
-        self.flowlist = data['flow_list']
-        self.dpirestapi = data['DpiRestApi']
+        self.flowlist = data["flow_list"]
+        self.dpirestapi = data["DpiRestApi"]
 
     def _wait_barrier(self, dp):
         barrier = dp.ofproto_parser.OFPBarrierRequest(dp)
@@ -234,10 +239,10 @@ class DpiStatsController(StatsController):
         return ret
 
     def _dpi_flows_cmd(self, dp, flows, cmd):
-        if cmd == 'on':
+        if cmd == "on":
             LOG.debug("<=================== Flow-Mod(ADD)")
             add_flows(dp, flows)
-        elif cmd == 'off':
+        elif cmd == "off":
             LOG.debug("<================ Flow-Mod(DELETE)")
             del_flows(dp, flows)
 
@@ -248,14 +253,14 @@ class DpiStatsController(StatsController):
 
     def _dpi_response(self, status, body, err_msg=None):
         if err_msg:
-            _dpi_body = {'err_msg': err_msg, 'body': body}
-            LOG.info('### REST-ERR: %s: %s', err_msg, str(body))
+            _dpi_body = {"err_msg": err_msg, "body": body}
+            LOG.info("### REST-ERR: %s: %s", err_msg, str(body))
         else:
             _dpi_body = body
-        return Response(content_type='application/json', status=status,
-            body=str(_dpi_body))
+        return webob.Response(content_type="application/json",
+                              status=status, body=json.dumps(_dpi_body))
 
-    @route('dpi', '/dpi/flow', methods=['PUT'])
+    @route("dpi", "/dpi/flow", methods=["PUT"])
     def dpi_received(self, req, **_kwargs):
         body = req.body
         LOG.debug("================ Received REST DPI")
@@ -268,12 +273,12 @@ class DpiStatsController(StatsController):
 
         # REST Parameter check
         try:
-            dpi_cmd = eval(body)['dpi']
+            dpi_cmd = eval(body)["dpi"]
         except:
             err_msg = "invalid syntax at body"
             return self._dpi_response(400, body, err_msg)
 
-        if dpi_cmd not in self.DPI_REST_LIST['dpi']:
+        if dpi_cmd not in self.DPI_REST_LIST["dpi"]:
             err_msg = "invalid value at dpi"
             return self._dpi_response(400, body, err_msg)
 
@@ -281,7 +286,7 @@ class DpiStatsController(StatsController):
         # Todo: flow_list.dpcheck(dpset)
         # if not ...
         dpi_flow = IPV6DPI
-        flow_list = dpi_flow['on']
+        flow_list = dpi_flow["on"]
         for dpid, flows in flow_list.items():
             dp = self.dpset.get(dpid)
             if dp is None:
@@ -310,7 +315,7 @@ class DpiRestApi(RestStatsApi):
         #flowlist.add_flows(1,[sflow,flow])
         #print flow
         #print sflow
-        #print sflow.to_jsondict()['StringifyFlow']
+        #print sflow.to_jsondict()["StringifyFlow"]
         #print str(flowlist)
         #print flowlist.get_switches()
         #print flowlist.get_flows(1)
@@ -320,9 +325,9 @@ class DpiRestApi(RestStatsApi):
         LOG.debug("=================== REST-API(init)")
         LOG.debug("args=%s, kwargs=%s", args, kwargs)
 
-        wsgi = kwargs['wsgi']
-        self.data['flow_list'] = flowlist
-        self.data['DpiRestApi'] = self
+        wsgi = kwargs["wsgi"]
+        self.data["flow_list"] = flowlist
+        self.data["DpiRestApi"] = self
         wsgi.register(DpiStatsController, self.data)
 
         LOG.debug("CONTEXTS=%s", self._CONTEXTS)
@@ -353,7 +358,7 @@ class DpiRestApi(RestStatsApi):
             LOG.debug("dpid=%s, xid=%s, dpset=%s",
                 dp.id, dp.xid, self.dpset.get_all())
 
-            flow_list = IPV6DPI['off']
+            flow_list = IPV6DPI["off"]
             flows = flow_list[dp.id]
             LOG.debug("add flows dpid=%s", dp.id)
             LOG.debug("flows=%s", flows)
@@ -380,7 +385,7 @@ class DpiRestApi(RestStatsApi):
     def _packet_in_handler(self, ev):
         msg = ev.msg
         dp = msg.datapath
-        in_port = msg.match['in_port']
+        in_port = msg.match["in_port"]
         pkt = packet.Packet(msg.data)
         LOG.debug("=======================> Packet-in")
         LOG.debug("dpid=%s, in_port=%s", dp.id, in_port)

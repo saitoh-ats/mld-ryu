@@ -3,13 +3,13 @@
 import unittest
 import logging
 import itertools
+import webob
+import json
 from nose.tools import *
 
 from ryu.lib import ofctl_v1_3
 from ryu.ofproto import ofproto_v1_3, ofproto_v1_3_parser
 from ryu.app.wsgi import ControllerBase, WSGIApplication, route
-from webob.response import Response
-from webob.request import Request
 from ryu.dpi import ipv6sw
 from ryu.controller.dpset import EventDP
 
@@ -123,44 +123,51 @@ class TestDpiStatsController(unittest.TestCase):
         }
         self.wsgi = WSGIApplication()
         self.wsgi.register(ipv6sw.DpiStatsController, self.data)
-        #LOG.debug((self.data.keys()))
-        #LOG.debug((self.wsgi))
 
     def tearDown(self):
         pass
 
-    def _request_dpi(self, uri, code=200, method='GET', body=''):
-        # Todo: status Http library to use
-        status = { 200: '200 OK',
-                   400: '400 Bad Request',
-                   404: '404 Not Found',
-                   500: '500'}
-
-        req = Request.blank(uri)
+    def _test_request_dpi(self, uri, code=200, method='GET', body=''):
+        req = webob.Request.blank(uri)
         req.method = method
         req.body = body
-        return  self.wsgi(req.environ, lambda s, _: eq_(s, status[code]))
 
-    def test_dpi_received_404_unreserved_uri(self):
-        res = self._request_dpi('/dpi', 404)
+        res = req.get_response(self.wsgi)
+        eq_(res.charset, 'UTF-8')
+        eq_(res.status_code, code)
+
+        return res
+
+    def test_dpi_received_404_notfound_uri(self):
+        self._test_request_dpi('/dpi', 404)
 
     def test_dpi_received_404_unreserved_method(self):
-        res = self._request_dpi('/dpi/flow', 404)
+        self._test_request_dpi('/dpi/flow', 404)
 
     def test_dpi_received_400_body_is_none(self):
-        res = self._request_dpi('/dpi/flow', 400, 'PUT')
-        LOG.debug(("return", res[0], type(res[0])))
+        res = self._test_request_dpi('/dpi/flow', 400, 'PUT')
+        LOG.debug("res.json", res.json)
+        ok_('body' in res.json)
+        ok_('err_msg' in res.json)
+        eq_(res.json['body'], '')
 
-        # Todo:
-        # res = ["{'body': '', 'err_msg': 'invalid syntax at body'}"]
-        #eq_(res[0].body, '')
+    def test_dpi_received_400_body_is_not_json(self):
+        body = 'test'
+        res = self._test_request_dpi('/dpi/flow', 400, 'PUT', body)
+        ok_('body' in res.json)
+        ok_('err_msg' in res.json)
+        eq_(res.json['body'], body)
 
     def test_dpi_received_400_body_has_not_dpi(self):
-        body = "{'test': 0}"
-        res = self._request_dpi('/dpi/flow', 400, 'PUT', body)
-        LOG.debug(("return", res[0]))
+        body = '{"test": 0}'
+        res = self._test_request_dpi('/dpi/flow', 400, 'PUT', body)
+        ok_('body' in res.json)
+        ok_('err_msg' in res.json)
+        eq_(res.json['body'], body)
 
-    def test_dpi_received_400_dpi_value_is_fail(self):
-        body = "{'dpi': 0}"
-        res = self._request_dpi('/dpi/flow', 400, 'PUT', body)
-        LOG.debug(("return", res[0]))
+    def test_dpi_received_400_dpi_value_is_invalid(self):
+        body = '{"dpi": 0}'
+        res = self._test_request_dpi('/dpi/flow', 400, 'PUT', body)
+        ok_('body' in res.json)
+        ok_('err_msg' in res.json)
+        eq_(res.json['body'], body)

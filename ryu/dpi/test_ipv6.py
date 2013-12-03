@@ -118,8 +118,7 @@ class TestDpiStatsController(unittest.TestCase):
         self.data = {
             'waiters': self.waiters,
             'dpset': self.dpset,
-            'DpiRestApi': None,
-            'flow_list': ipv6sw.IPV6DPI
+            'dpiflow': ipv6sw.IPV6DPI
         }
         self.wsgi = WSGIApplication()
         self.wsgi.register(ipv6sw.DpiStatsController, self.data)

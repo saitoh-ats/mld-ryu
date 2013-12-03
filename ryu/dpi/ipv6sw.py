@@ -137,22 +137,9 @@ def load_json(fname, encoding='utf-8'):
         return json.load(f, encoding)
 
 
-class StringifyFlow(StringifyMixin):
+class Flowdict(dict):
     """
-    """
-    def __init__(self, cookie=0, priority=0, idle_timeout=0, hard_timeout=0,
-                 match=None, actions=[]):
-        super(StringifyFlow, self).__init__()
-        self.cookie = cookie
-        self.priority = priority
-        self.idle_timeout = idle_timeout
-        self.hard_timeout = hard_timeout
-        self.match = match
-        self.actions = actions
-
-
-class Flow(dict):
-    """
+    flowdict = {<dpid>: [flow, ...], ...}
     flow = {"cookie": cookie,
             "priority": priority,
             "flags": 0,
@@ -163,54 +150,31 @@ class Flow(dict):
     """
 
     def __init__(self):
-        super(Flow, self).__init__()
+        super(Flowdict, self).__init__()
 
-        match = {"in_port": 1}
-        actions = [{"output": 2}]
-        instructions = [{"output": 2}]
+    def from_file(self, fname):
+        self = load_json(fname)
 
-        self.__setitem__("cookie", 0)
-        self.__setitem__("priority", 0)
-        self.__setitem__("match", match)
-        self.__setitem__("actions", actions)
-        self.__setitem__("instructions", instructions)
+    def from_json(self, j):
+        self.update(json.loads(j))
+        return self
 
+    def to_json(self):
+        return json.dumps(self)
 
-class FlowList(object):
-    """
-    flowlist = {"<dpid>": [flow, ...], ...}
-    flow = {"cookie": cookie,
-            "priority": priority,
-            "flags": 0,
-            "idle_timeout": 0,
-            "hard_timeout": 0,
-            "match": match,
-            "actions": actions}
-    """
+    def get_dpids(self):
+        return [int(x) for x in self.keys()]
 
-    def __init__(self, filename=None):
-        self.flowlist = {}
-
-    def get_switches(self):
-        return self.flowlist.keys()
+    def get_items(self):
+        return [(int(x), y) for x, y in self.items()]
 
     def get_flows(self, dpid):
-        try:
-            return self.flowlist[dpid]
-        except:
-            return []
-
-    def set_flows(self, dpid, flows):
-        self.flowlist[dpid] = flows
-
-    def add_flows(self, dpid, flows):
-        if dpid in self.flowlist:
-            self.flowlist[dpid].append(flows)
+        if dpid in self:
+            return self[dpid]
+        elif str(dpid) in self:
+            return self[str(dpid)]
         else:
-            self.set_flows(dpid, flows)
-
-    def __str__(self):
-        return str(self.flowlist)
+            return []
 
 
 class DpiStatsController(StatsController):
@@ -218,8 +182,7 @@ class DpiStatsController(StatsController):
 
     def __init__(self, req, link, data, **config):
         super(DpiStatsController, self).__init__(req, link, data, **config)
-        self.flowlist = data["flow_list"]
-        self.dpirestapi = data["DpiRestApi"]
+        self.dpiflow = data["dpiflow"]
 
     def _wait_barrier(self, dp):
         barrier = dp.ofproto_parser.OFPBarrierRequest(dp)
@@ -267,8 +230,7 @@ class DpiStatsController(StatsController):
         LOG.debug("body=%s", body)
         LOG.debug("dpset=%s", self.dpset)
         LOG.debug("waiters=%s", self.waiters)
-        LOG.debug("flowlist=%s", self.flowlist)
-        LOG.debug("RyuApp=%s", self.dpirestapi)
+        LOG.debug("dpiflow=%s", self.dpiflow)
         LOG.debug("==================================")
 
         # REST Parameter check
@@ -285,15 +247,14 @@ class DpiStatsController(StatsController):
         # Datapath check
         # Todo: flow_list.dpcheck(dpset)
         # if not ...
-        dpi_flow = IPV6DPI
-        flow_list = dpi_flow["on"]
-        for dpid, flows in flow_list.items():
+        flow_list = self.dpiflow["primary"]
+        for dpid, flows in flow_list.get_items():
             dp = self.dpset.get(dpid)
             if dp is None:
                 err_msg = "Datapath[dpid=%s] is None" % dpid
                 return self._dpi_response(500, body, err_msg)
 
-        for dpid, flows in flow_list.items():
+        for dpid, flows in flow_list.get_items():
             dp = self.dpset.get(dpid)
             if not self._dpi_flows_cmd(dp, flows, dpi_cmd):
                 err_msg = "BarrierRequest Timeout. [dpid=%s]" % dp.id
@@ -309,25 +270,18 @@ class DpiRestApi(RestStatsApi):
     def __init__(self, *args, **kwargs):
         super(DpiRestApi, self).__init__(*args, **kwargs)
 
-        #flow = Flow()
-        #sflow = StringifyFlow.from_jsondict(JSON)
-        flowlist = FlowList()
-        #flowlist.add_flows(1,[sflow,flow])
-        #print flow
-        #print sflow
-        #print sflow.to_jsondict()["StringifyFlow"]
-        #print str(flowlist)
-        #print flowlist.get_switches()
-        #print flowlist.get_flows(1)
-        #print flowlist.get_flows(2)
-        #exit()
+        # self.dpiflow = {
+        #     "primary": Flowdict().from_jsonfile(JSONFILE_PRM),
+        #     "standard": Flowdict().from_jsonfile(JSONFILE_STD)}
+        self.dpiflow = {"primary": Flowdict().from_json(json.dumps(IPV6LIST)),
+                        "standard": Flowdict().from_json(json.dumps((FLIST)))}
+        LOG.debug("standard=%s", self.dpiflow["standard"].to_json())
+        LOG.debug("primary=%s", self.dpiflow["primary"].to_json())
 
         LOG.debug("=================== REST-API(init)")
         LOG.debug("args=%s, kwargs=%s", args, kwargs)
-
         wsgi = kwargs["wsgi"]
-        self.data["flow_list"] = flowlist
-        self.data["DpiRestApi"] = self
+        self.data["dpiflow"] = self.dpiflow
         wsgi.register(DpiStatsController, self.data)
 
         LOG.debug("CONTEXTS=%s", self._CONTEXTS)
@@ -358,8 +312,8 @@ class DpiRestApi(RestStatsApi):
             LOG.debug("dpid=%s, xid=%s, dpset=%s",
                 dp.id, dp.xid, self.dpset.get_all())
 
-            flow_list = IPV6DPI["off"]
-            flows = flow_list[dp.id]
+            flows = self.dpiflow["standard"].get_flows(dp.id)
+            LOG.debug("standard=%s", self.dpiflow["standard"])
             LOG.debug("add flows dpid=%s", dp.id)
             LOG.debug("flows=%s", flows)
             add_flows(dp, flows)

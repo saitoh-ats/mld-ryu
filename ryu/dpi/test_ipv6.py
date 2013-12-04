@@ -70,7 +70,7 @@ class Test_ipv6sw(unittest.TestCase):
         for key in attrs.keys():
             eq_(match[key], attrs[key])
 
-    def test_to_match_unmatched(self):
+    def test_to_match_invalid(self):
         attrs = {'dummy': 1}
         match = self._get_to_match(attrs)
         ok_('dummy' not in match)

@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import logging
 import struct
 import json
@@ -33,6 +34,9 @@ from ryu.ofproto.ofproto_parser import StringifyMixin
 LOG = logging.getLogger(__name__)
 
 BARRIER_REPLY_TIMER = 2.0  # sec
+JSONDIR = os.path.dirname(os.path.realpath(__file__))
+JSONFILE = {"standard": "dpiflows_standard",
+            "primary": "dpiflows_primary"}
 FLOW_PKT_IN = {
     "actions": [{"type": "OUTPUT", "port": 0xfffffffd, "max_len": 65535}]}
 
@@ -132,11 +136,6 @@ def del_cookies(dp, cookies):
         mod_flow_entry(dp, flow, cmd)
 
 
-def load_json(fname, encoding='utf-8'):
-    with open(fname) as f:
-        return json.load(f, encoding)
-
-
 class Flowdict(dict):
     """
     flowdict = {<dpid>: [flow, ...], ...}
@@ -152,15 +151,19 @@ class Flowdict(dict):
     def __init__(self):
         super(Flowdict, self).__init__()
 
-    def from_file(self, fname):
-        self = load_json(fname)
+    def from_file(self, file, encoding='utf-8'):
+        with open(file, 'r') as f:
+            self.update(json.load(f, encoding))
 
     def from_json(self, j):
         self.update(json.loads(j))
         return self
 
-    def to_json(self):
-        return json.dumps(self)
+    def to_json(self, indent=False):
+        if indent:
+            return json.dumps(self, sort_keys=True, indent=4)
+        else:
+            return json.dumps(self)
 
     def get_dpids(self):
         return [int(x) for x in self.keys()]
@@ -169,12 +172,15 @@ class Flowdict(dict):
         return [(int(x), y) for x, y in self.items()]
 
     def get_flows(self, dpid):
-        if dpid in self:
-            return self[dpid]
-        elif str(dpid) in self:
+        if str(dpid) in self:
             return self[str(dpid)]
         else:
             return []
+
+    def check_dp(self, dpset):
+        for dpid in self.get_dpids():
+            if dpset.get(dpid) is None:
+                return dpid
 
 
 class DpiStatsController(StatsController):
@@ -209,8 +215,7 @@ class DpiStatsController(StatsController):
             LOG.debug("<================ Flow-Mod(DELETE)")
             del_flows(dp, flows)
 
-        LOG.debug("dpid=%s", dp.id)
-        LOG.debug("flows=%s", flows)
+        LOG.debug("dpid=%s flows=%s", dp.id, len(flows))
         LOG.debug("==================================")
         return self._wait_barrier(dp)
 
@@ -227,10 +232,8 @@ class DpiStatsController(StatsController):
     def dpi_received(self, req, **_kwargs):
         body = req.body
         LOG.debug("================ Received REST DPI")
-        LOG.debug("body=%s", body)
-        LOG.debug("dpset=%s", self.dpset)
-        LOG.debug("waiters=%s", self.waiters)
-        LOG.debug("dpiflow=%s", self.dpiflow)
+        LOG.debug("Request_body=%s", body)
+        LOG.debug("dpset_dpids=%s", self.dpset.dps.keys())
         LOG.debug("==================================")
 
         # REST Parameter check
@@ -245,17 +248,16 @@ class DpiStatsController(StatsController):
             return self._dpi_response(400, body, err_msg)
 
         # Datapath check
-        # Todo: flow_list.dpcheck(dpset)
-        # if not ...
         flow_list = self.dpiflow["primary"]
-        for dpid, flows in flow_list.get_items():
-            dp = self.dpset.get(dpid)
-            if dp is None:
-                err_msg = "Datapath[dpid=%s] is None" % dpid
-                return self._dpi_response(500, body, err_msg)
+        dpid = flow_list.check_dp(self.dpset)
+        if dpid is not None:
+            err_msg = "Datapath[dpid=%s] is None" % dpid
+            return self._dpi_response(500, body, err_msg)
 
+        # FlowMod & BariierRequest
         for dpid, flows in flow_list.get_items():
             dp = self.dpset.get(dpid)
+            LOG.debug("FlowMod dpid=%s flows=primary[%s]", dp.id, len(flows))
             if not self._dpi_flows_cmd(dp, flows, dpi_cmd):
                 err_msg = "BarrierRequest Timeout. [dpid=%s]" % dp.id
                 LOG.error(err_msg)
@@ -269,24 +271,25 @@ class DpiRestApi(RestStatsApi):
 
     def __init__(self, *args, **kwargs):
         super(DpiRestApi, self).__init__(*args, **kwargs)
-
-        # self.dpiflow = {
-        #     "primary": Flowdict().from_jsonfile(JSONFILE_PRM),
-        #     "standard": Flowdict().from_jsonfile(JSONFILE_STD)}
-        self.dpiflow = {"primary": Flowdict().from_json(json.dumps(IPV6LIST)),
-                        "standard": Flowdict().from_json(json.dumps((FLIST)))}
-        LOG.debug("standard=%s", self.dpiflow["standard"].to_json())
-        LOG.debug("primary=%s", self.dpiflow["primary"].to_json())
+        self.dpiflow = {}
 
         LOG.debug("=================== REST-API(init)")
         LOG.debug("args=%s, kwargs=%s", args, kwargs)
-        wsgi = kwargs["wsgi"]
-        self.data["dpiflow"] = self.dpiflow
-        wsgi.register(DpiStatsController, self.data)
 
-        LOG.debug("CONTEXTS=%s", self._CONTEXTS)
-        LOG.debug("dpset=%s", self.dpset)
-        LOG.debug("data=%s", self.data)
+        for k, v in JSONFILE.items():
+            fname = os.path.join(JSONDIR, v)
+            if os.path.isfile(fname):
+                self.dpiflow[k] = Flowdict()
+                self.dpiflow[k].from_file(fname)
+                LOG.debug("\nfopen [%s]: %s", k, fname)
+                LOG.debug("flows: %s", self.dpiflow[k].to_json())
+            else:
+                LOG.error("### Init-ERR: cannot access [%s]", fname)
+                exit(1)
+
+        self.data["dpiflow"] = self.dpiflow
+        wsgi = kwargs["wsgi"]
+        wsgi.register(DpiStatsController, self.data)
         LOG.debug("==================================")
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
@@ -298,8 +301,7 @@ class DpiRestApi(RestStatsApi):
 
         if dp.ofproto.OFP_VERSION == ofproto_v1_3.OFP_VERSION:
             flows = [FLOW_PKT_IN]
-            LOG.debug("add flows dpid=%s", dp.id)
-            LOG.debug("flows=%s", flows)
+            LOG.debug("FlowMod dpid=%s flows=PacketIn", dp.id)
             add_flows(dp, flows)
 
         LOG.debug("==================================")
@@ -310,12 +312,10 @@ class DpiRestApi(RestStatsApi):
             dp = ev.dp
             LOG.debug("===================> dpset EventDP")
             LOG.debug("dpid=%s, xid=%s, dpset=%s",
-                dp.id, dp.xid, self.dpset.get_all())
+                dp.id, dp.xid, self.dpset.dps.keys())
 
             flows = self.dpiflow["standard"].get_flows(dp.id)
-            LOG.debug("standard=%s", self.dpiflow["standard"])
-            LOG.debug("add flows dpid=%s", dp.id)
-            LOG.debug("flows=%s", flows)
+            LOG.debug("FlowMod dpid=%s flows=standard[%s]", dp.id, len(flows))
             add_flows(dp, flows)
             LOG.debug("==================================")
 

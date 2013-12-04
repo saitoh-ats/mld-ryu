@@ -40,48 +40,6 @@ JSONFILE = {"standard": "dpiflows_standard",
 FLOW_PKT_IN = {
     "actions": [{"type": "OUTPUT", "port": 0xfffffffd, "max_len": 65535}]}
 
-FLOW_1 = {
-    "cookie": 1,
-    "priority": 100,
-    "match": {"eth_type": 0x0800, "in_port": 1},
-    "actions": [{"type": "OUTPUT", "port": 2}]
-    }
-FLOW_2 = {
-    "cookie": 1,
-    "priority": 100,
-    "match": {"eth_type": 0x0800, "in_port": 2},
-    "actions": [{"type": "OUTPUT", "port": 1}]
-    }
-FLOW_3 = {
-    "cookie": 1,
-    "priority": 100,
-    "match": {"eth_type": 0x0806, "in_port": 2},
-    "actions": [{"type": "OUTPUT", "port": 0xfffffffb}]
-    }
-FLIST = {1: [FLOW_1, FLOW_2, FLOW_3]}
-FLIST[2] = [FLOW_1, FLOW_2, FLOW_3]
-IPV6FLOW = {
-    "cookie": 2,
-    "priority": 200,
-    "match": {"eth_type": 0x86dd, "ipv6_dst": ["ff02::", "ffff:ffff:ffff:ffff::"]},
-    "actions": [{"type": "OUTPUT", "port": 0xfffffffb}]
-    }
-IPV6FLOW2 = {
-    "cookie": 2,
-    "priority": 200,
-    "match": {"in_port": 1, "eth_type": 0x86dd, "ipv6_dst": "fe80::200:ff:fe00:2"},
-    "actions": [{"type": "OUTPUT", "port": 2}]
-    }
-IPV6FLOW3 = {
-    "cookie": 2,
-    "priority": 200,
-    "match": {"in_port": 2, "eth_type": 0x86dd, "ipv6_dst": "fe80::200:ff:fe00:1"},
-    "actions": [{"type": "OUTPUT", "port": 1}]
-    }
-IPV6LIST = {1: [IPV6FLOW, IPV6FLOW2, IPV6FLOW3]}
-IPV6LIST[2] = [IPV6FLOW, IPV6FLOW2, IPV6FLOW3]
-IPV6DPI = {"on": IPV6LIST, "off": FLIST}
-
 
 def to_match(dp, attrs):
     try:
@@ -312,7 +270,7 @@ class DpiRestApi(RestStatsApi):
             dp = ev.dp
             LOG.debug("===================> dpset EventDP")
             LOG.debug("dpid=%s, xid=%s, dpset=%s",
-                dp.id, dp.xid, self.dpset.dps.keys())
+                      dp.id, dp.xid, self.dpset.dps.keys())
 
             flows = self.dpiflow["standard"].get_flows(dp.id)
             LOG.debug("FlowMod dpid=%s flows=standard[%s]", dp.id, len(flows))

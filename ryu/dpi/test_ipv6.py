@@ -33,8 +33,8 @@ class _DPSet(object):
         self.dps = {}
 
     def register(self, dp):
-         self.dps[dp.id] = dp
-         self.ev = EventDP(dp, True)
+        self.dps[dp.id] = dp
+        self.ev = EventDP(dp, True)
 
     def get(self, dp_id):
         return self.dps.get(dp_id)
@@ -64,7 +64,7 @@ class Test_ipv6sw(unittest.TestCase):
         attrs['eth_type'] = 0x86dd
         attrs['ipv6_src'] = '2001:db8:bd05:1d2:288a:1fc0:1:10ee'
         attrs['ipv6_dst'] = '2001:db8:bd05:1d2:288a:1fc0:1:10ef'
-        
+
         match = self._get_to_match(attrs)
 
         for key in attrs.keys():
@@ -102,6 +102,7 @@ class Test_ipv6sw(unittest.TestCase):
             ok_(isinstance(msg, dp.ofproto_parser.OFPFlowMod))
             eq_(msg.command, dp.ofproto.OFPFC_DELETE)
             eq_(msg.cookie, cookies[i])
+
 
 class TestDpiStatsController(unittest.TestCase):
 

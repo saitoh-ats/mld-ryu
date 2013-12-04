@@ -1,0 +1,98 @@
+{
+    "1": [
+        {
+            "actions": [
+                {
+                    "port": 4294967291, 
+                    "type": "OUTPUT"
+                }
+            ], 
+            "cookie": 2, 
+            "match": {
+                "eth_type": 34525, 
+                "ipv6_dst": [
+                    "ff02::", 
+                    "ffff:ffff:ffff:ffff::"
+                ]
+            }, 
+            "priority": 200
+        }, 
+        {
+            "actions": [
+                {
+                    "port": 2, 
+                    "type": "OUTPUT"
+                }
+            ], 
+            "cookie": 2, 
+            "match": {
+                "eth_type": 34525, 
+                "in_port": 1, 
+                "ipv6_dst": "fe80::200:ff:fe00:2"
+            }, 
+            "priority": 200
+        }, 
+        {
+            "actions": [
+                {
+                }
+            ], 
+            "cookie": 2, 
+            "match": {
+                "eth_type": 34525, 
+                "in_port": 2, 
+                "ipv6_dst": "fe80::200:ff:fe00:1"
+            }, 
+            "priority": 200
+        }
+    ], 
+    "2": [
+        {
+            "actions": [
+                {
+                    "port": 4294967291, 
+                    "type": "OUTPUT"
+                }
+            ], 
+            "cookie": 2, 
+            "match": {
+                "eth_type": 34525, 
+                "ipv6_dst": [
+                    "ff02::", 
+                    "ffff:ffff:ffff:ffff::"
+                ]
+            }, 
+            "priority": 200
+        }, 
+        {
+            "actions": [
+                {
+                    "port": 2, 
+                    "type": "OUTPUT"
+                }
+            ], 
+            "cookie": 2, 
+            "match": {
+                "eth_type": 34525, 
+                "in_port": 1, 
+                "ipv6_dst": "fe80::200:ff:fe00:2"
+            }, 
+            "priority": 200
+        }, 
+        {
+            "actions": [
+                {
+                    "port": 1, 
+                    "type": "OUTPUT"
+                }
+            ], 
+            "cookie": 2, 
+            "match": {
+                "eth_type": 34525, 
+                "in_port": 2, 
+                "ipv6_dst": "fe80::200:ff:fe00:1"
+            }, 
+            "priority": 200
+        }
+    ]
+}

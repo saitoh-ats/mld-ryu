@@ -33,12 +33,16 @@ from ryu.ofproto.ofproto_parser import StringifyMixin
 
 LOG = logging.getLogger(__name__)
 
+# Tuning
 BARRIER_REPLY_TIMER = 2.0  # sec
-JSONDIR = os.path.dirname(os.path.realpath(__file__))
-JSONFILE = {"standard": "dpiflows_standard",
-            "primary": "dpiflows_primary"}
 FLOW_PKT_IN = {
     "actions": [{"type": "OUTPUT", "port": 0xfffffffd, "max_len": 65535}]}
+
+# Static
+DPI_FLOWLIST = {"default": "standard", "dpi": "primary"}
+JSONFILE = DPI_FLOWLIST.values()
+JSONDIR = "dpiflows"
+JSONPATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), JSONDIR)
 
 
 def to_match(dp, attrs):
@@ -154,9 +158,9 @@ class DpiStatsController(StatsController):
         waiters_per_dp = self.waiters.setdefault(dp.id, {})
         event = hub.Event()
         waiters_per_dp[barrier.xid] = event
-        LOG.debug("<================= Barrier Request")
+        LOG.info("<----------------- Barrier Request")
         LOG.debug("dpid=%s xid=%s", dp.id, barrier.xid)
-        LOG.debug("==================================")
+        LOG.debug("----------------------------------")
         dp.send_msg(barrier)
 
         ret = event.wait(timeout=BARRIER_REPLY_TIMER)
@@ -167,14 +171,14 @@ class DpiStatsController(StatsController):
 
     def _dpi_flows_cmd(self, dp, flows, cmd):
         if cmd == "on":
-            LOG.debug("<=================== Flow-Mod(ADD)")
+            LOG.info("<------------------- Flow-Mod(ADD)")
             add_flows(dp, flows)
         elif cmd == "off":
-            LOG.debug("<================ Flow-Mod(DELETE)")
+            LOG.info("<---------------- Flow-Mod(DELETE)")
             del_flows(dp, flows)
 
         LOG.debug("dpid=%s flows=%s", dp.id, len(flows))
-        LOG.debug("==================================")
+        LOG.debug("----------------------------------")
         return self._wait_barrier(dp)
 
     def _dpi_response(self, status, body, err_msg=None):
@@ -189,8 +193,8 @@ class DpiStatsController(StatsController):
     @route("dpi", "/dpi/flow", methods=["PUT"])
     def dpi_received(self, req, **_kwargs):
         body = req.body
-        LOG.debug("================ Received REST DPI")
-        LOG.debug("Request_body=%s", body)
+        LOG.info("================ Received REST DPI")
+        LOG.info("Request_body=%s", body)
         LOG.debug("dpset_dpids=%s", self.dpset.dps.keys())
         LOG.debug("==================================")
 
@@ -206,7 +210,8 @@ class DpiStatsController(StatsController):
             return self._dpi_response(400, body, err_msg)
 
         # Datapath check
-        flow_list = self.dpiflow["primary"]
+        flow_tag = DPI_FLOWLIST["dpi"]
+        flow_list = self.dpiflow[flow_tag]
         dpid = flow_list.check_dp(self.dpset)
         if dpid is not None:
             err_msg = "Datapath[dpid=%s] is None" % dpid
@@ -215,7 +220,7 @@ class DpiStatsController(StatsController):
         # FlowMod & BariierRequest
         for dpid, flows in flow_list.get_items():
             dp = self.dpset.get(dpid)
-            LOG.debug("FlowMod dpid=%s flows=primary[%s]", dp.id, len(flows))
+            LOG.debug("FlowMod dpid=%s flows=%s", dp.id, flow_tag)
             if not self._dpi_flows_cmd(dp, flows, dpi_cmd):
                 err_msg = "BarrierRequest Timeout. [dpid=%s]" % dp.id
                 LOG.error(err_msg)
@@ -231,16 +236,17 @@ class DpiRestApi(RestStatsApi):
         super(DpiRestApi, self).__init__(*args, **kwargs)
         self.dpiflow = {}
 
-        LOG.debug("=================== REST-API(init)")
+        LOG.info("=================== REST-API(init)")
+        LOG.info("BarrierReplyTimer=%s", BARRIER_REPLY_TIMER)
         LOG.debug("args=%s, kwargs=%s", args, kwargs)
 
-        for k, v in JSONFILE.items():
-            fname = os.path.join(JSONDIR, v)
+        for f in JSONFILE:
+            fname = os.path.join(JSONPATH, f)
             if os.path.isfile(fname):
-                self.dpiflow[k] = Flowdict()
-                self.dpiflow[k].from_file(fname)
-                LOG.debug("\nfopen [%s]: %s", k, fname)
-                LOG.debug("flows: %s", self.dpiflow[k].to_json())
+                self.dpiflow[f] = Flowdict()
+                self.dpiflow[f].from_file(fname)
+                LOG.info("fopen [%s]: %s", f, fname)
+                LOG.debug("flows: %s\n", self.dpiflow[f].to_json())
             else:
                 LOG.error("### Init-ERR: cannot access [%s]", fname)
                 exit(1)
@@ -254,8 +260,8 @@ class DpiRestApi(RestStatsApi):
     def _switch_features_handler(self, ev):
         msg = ev.msg
         dp = msg.datapath
-        LOG.debug("==================> SwitchFeatures")
-        LOG.debug("dpid=%s, dpset=%s", dp.id, self.dpset.get_all())
+        LOG.info("==================> SwitchFeatures")
+        LOG.info("dpid=%s, dpset=%s", dp.id, self.dpset.get_all())
 
         if dp.ofproto.OFP_VERSION == ofproto_v1_3.OFP_VERSION:
             flows = [FLOW_PKT_IN]
@@ -268,12 +274,13 @@ class DpiRestApi(RestStatsApi):
     def _handler_datapath(self, ev):
         if ev.enter:
             dp = ev.dp
-            LOG.debug("===================> dpset EventDP")
-            LOG.debug("dpid=%s, xid=%s, dpset=%s",
+            LOG.info("===================> dpset EventDP")
+            LOG.info("dpid=%s, xid=%s, dpset=%s",
                       dp.id, dp.xid, self.dpset.dps.keys())
 
-            flows = self.dpiflow["standard"].get_flows(dp.id)
-            LOG.debug("FlowMod dpid=%s flows=standard[%s]", dp.id, len(flows))
+            flow_tag = DPI_FLOWLIST["default"]
+            flows = self.dpiflow[flow_tag].get_flows(dp.id)
+            LOG.debug("FlowMod dpid=%s flows=%s", dp.id, flow_tag)
             add_flows(dp, flows)
             LOG.debug("==================================")
 
@@ -281,9 +288,9 @@ class DpiRestApi(RestStatsApi):
     def _barrier_reply_handler(self, ev):
         msg = ev.msg
         dp = msg.datapath
-        LOG.debug("===================> Barrier Reply")
+        LOG.info("-------------------> Barrier Reply")
         LOG.debug("dpid=%s, msg=%s", dp.id, msg)
-        LOG.debug("==================================")
+        LOG.debug("----------------------------------")
 
         if (dp.id not in self.waiters
                 or msg.xid not in self.waiters[dp.id]):
@@ -299,7 +306,7 @@ class DpiRestApi(RestStatsApi):
         dp = msg.datapath
         in_port = msg.match["in_port"]
         pkt = packet.Packet(msg.data)
-        LOG.debug("=======================> Packet-in")
-        LOG.debug("dpid=%s, in_port=%s", dp.id, in_port)
+        LOG.info("=======================> Packet-in")
+        LOG.info("dpid=%s, in_port=%s", dp.id, in_port)
         LOG.debug("packet=%s", str(pkt))
         LOG.debug("==================================")

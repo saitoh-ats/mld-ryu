@@ -15,11 +15,9 @@
 
 import os
 import logging
-import struct
 import json
 import webob
 
-from ryu.base import app_manager
 from ryu.controller import ofp_event, dpset
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
@@ -28,7 +26,6 @@ from ryu.lib import hub, ofctl_v1_3
 from ryu.lib.packet import packet
 from ryu.app.ofctl_rest import StatsController, RestStatsApi
 from ryu.app.wsgi import route
-from ryu.ofproto.ofproto_parser import StringifyMixin
 
 
 LOG = logging.getLogger(__name__)
@@ -245,7 +242,7 @@ class DpiRestApi(RestStatsApi):
             if os.path.isfile(fname):
                 self.dpiflow[f] = Flowdict()
                 self.dpiflow[f].from_file(fname)
-                LOG.info("fopen [%s]: %s", f, fname)
+                LOG.info("FlowFile=[%s]: %s", f, fname)
                 LOG.debug("flows: %s\n", self.dpiflow[f].to_json())
             else:
                 LOG.error("### Init-ERR: cannot access [%s]", fname)

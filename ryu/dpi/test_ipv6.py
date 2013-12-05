@@ -7,6 +7,7 @@ import itertools
 import webob
 import json
 from nose.tools import *
+from mock import patch
 
 from ryu.lib import ofctl_v1_3
 from ryu.ofproto import ofproto_v1_3, ofproto_v1_3_parser
@@ -16,6 +17,8 @@ from ryu.controller.dpset import EventDP
 
 LOG = logging.getLogger(__name__)
 
+TEST_FLOW_STD = {"actions":[{"type":"OUTPUT", "port":1}]}
+TEST_FLOW_PRI = {"actions":[{"type":"OUTPUT", "port":2}]}
 
 class _Datapath(object):
     ofproto = ofproto_v1_3
@@ -24,6 +27,13 @@ class _Datapath(object):
     def __init__(self, id=1):
         self.msgs = []
         self.id = id
+        self.xid = 1
+
+    def set_xid(self, msg):
+        self.xid += 1
+        self.xid &= self.ofproto.MAX_XID
+        msg.set_xid(self.xid)
+        return self.xid
 
     def send_msg(self, msg):
         self.msgs.append(msg)
@@ -109,7 +119,7 @@ class TestFlowdict(unittest.TestCase):
     """
 
     def setUp(self):
-        self.flow = {"actions":[{"type":"OUTPUT", "port":1}]}
+        self.flow = TEST_FLOW_STD
         self.dict = {"1":[self.flow]}
         self.json = json.dumps(self.dict)
         self.flowdict = ipv6sw.Flowdict()
@@ -168,16 +178,14 @@ class TestDpiStatsController(unittest.TestCase):
     """
 
     def setUp(self):
-        dp = _Datapath()
-        dpset = _DPSet()
-        dpset.register(dp)
-
-        self.dpset = dpset
-        self.waiters = {}
+        self.dpiflow = {"standard": ipv6sw.Flowdict(),
+                        "primary": ipv6sw.Flowdict()}
+        self.dpiflow["standard"]["1"] = [TEST_FLOW_STD]
+        self.dpiflow["primary"]["1"] = [TEST_FLOW_PRI]
         self.data = {
-            'waiters': self.waiters,
-            'dpset': self.dpset,
-            'dpiflow': {}
+            'waiters': {},
+            'dpset': _DPSet(),
+            'dpiflow': self.dpiflow
         }
         self.wsgi = WSGIApplication()
         self.wsgi.register(ipv6sw.DpiStatsController, self.data)
@@ -185,47 +193,93 @@ class TestDpiStatsController(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def _test_request_dpi(self, uri, code=200, method='GET', body=''):
+    def _test_request_dpi(self, wsgi, uri, code=200, method='GET', body=''):
         req = webob.Request.blank(uri)
         req.method = method
         req.body = body
 
-        res = req.get_response(self.wsgi)
+        res = req.get_response(wsgi)
         eq_(res.charset, 'UTF-8')
         eq_(res.status_code, code)
 
         return res
 
+    @patch('ryu.dpi.ipv6sw.DpiStatsController._wait_barrier', return_value=True)
+    def _test_dpi_received_200(self, body, m):
+        dp = _Datapath()
+        data = self.data
+        self.data["dpset"].register(dp)
+        _cmddict = {"on": dp.ofproto.OFPFC_ADD,
+                    "off": dp.ofproto.OFPFC_DELETE}
+        cmd = _cmddict[json.loads(body)["dpi"]]
+
+        wsgi = WSGIApplication()
+        wsgi.register(ipv6sw.DpiStatsController, self.data)
+
+        res = self._test_request_dpi(wsgi, '/dpi/flow', 200, 'PUT', body)
+        eq_(res.json, body)
+
+        msgs = self.data["dpset"].dps[1].msgs
+        eq_(len(msgs), 1)
+        ok_(isinstance(msgs[0], dp.ofproto_parser.OFPFlowMod))
+        eq_(msgs[0].command, cmd)
+
+    def test_dpi_received_200_dpi_on(self):
+        body = '{"dpi": "on"}'
+        self._test_dpi_received_200(body)
+
+    def test_dpi_received_200_dpi_off(self):
+        body = '{"dpi": "off"}'
+        self._test_dpi_received_200(body)
+
     def test_dpi_received_404_notfound_uri(self):
-        self._test_request_dpi('/dpi', 404)
+        self._test_request_dpi(self.wsgi, '/dpi', 404)
 
     def test_dpi_received_404_unreserved_method(self):
-        self._test_request_dpi('/dpi/flow', 404)
+        self._test_request_dpi(self.wsgi, '/dpi/flow', 404)
 
     def test_dpi_received_400_body_is_none(self):
-        res = self._test_request_dpi('/dpi/flow', 400, 'PUT')
-        LOG.debug("res.json", res.json)
+        res = self._test_request_dpi(self.wsgi, '/dpi/flow', 400, 'PUT')
         ok_('body' in res.json)
         ok_('err_msg' in res.json)
         eq_(res.json['body'], '')
 
     def test_dpi_received_400_body_is_not_json(self):
         body = 'test'
-        res = self._test_request_dpi('/dpi/flow', 400, 'PUT', body)
+        res = self._test_request_dpi(self.wsgi, '/dpi/flow', 400, 'PUT', body)
         ok_('body' in res.json)
         ok_('err_msg' in res.json)
         eq_(res.json['body'], body)
 
     def test_dpi_received_400_body_has_not_dpi(self):
         body = '{"test": 0}'
-        res = self._test_request_dpi('/dpi/flow', 400, 'PUT', body)
+        res = self._test_request_dpi(self.wsgi, '/dpi/flow', 400, 'PUT', body)
         ok_('body' in res.json)
         ok_('err_msg' in res.json)
         eq_(res.json['body'], body)
 
     def test_dpi_received_400_dpi_value_is_invalid(self):
         body = '{"dpi": 0}'
-        res = self._test_request_dpi('/dpi/flow', 400, 'PUT', body)
+        res = self._test_request_dpi(self.wsgi, '/dpi/flow', 400, 'PUT', body)
         ok_('body' in res.json)
         ok_('err_msg' in res.json)
         eq_(res.json['body'], body)
+
+    def test_dpi_received_500_dpid_not_in_dpset(self):
+        body = '{"dpi": "on"}'
+        res = self._test_request_dpi(self.wsgi, '/dpi/flow', 500, 'PUT', body)
+        ok_('body' in res.json)
+        ok_('err_msg' in res.json)
+        eq_(res.json['body'], body)
+
+    def test_dpi_received_500_BarrierRequest_timeout(self):
+        ipv6sw.BARRIER_REPLY_TIMER = 0.1
+        data = self.data
+        self.data["dpset"].register(_Datapath())
+        LOG.debug(("self.data", self.data["dpset"].get_all()))
+
+        wsgi = WSGIApplication()
+        wsgi.register(ipv6sw.DpiStatsController, self.data)
+
+        body = '{"dpi": "on"}'
+        res = self._test_request_dpi(wsgi, '/dpi/flow', 500, 'PUT', body)

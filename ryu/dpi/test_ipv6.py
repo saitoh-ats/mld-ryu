@@ -1,5 +1,6 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 
+import os
 import unittest
 import logging
 import itertools
@@ -44,7 +45,6 @@ class _DPSet(object):
 
 
 class Test_ipv6sw(unittest.TestCase):
-
     """ Test case for ipv6sw functions
     """
 
@@ -104,8 +104,66 @@ class Test_ipv6sw(unittest.TestCase):
             eq_(msg.cookie, cookies[i])
 
 
-class TestDpiStatsController(unittest.TestCase):
+class TestFlowdict(unittest.TestCase):
+    """ Test case for Flowdict
+    """
 
+    def setUp(self):
+        self.flow = {"actions":[{"type":"OUTPUT", "port":1}]}
+        self.dict = {"1":[self.flow]}
+        self.json = json.dumps(self.dict)
+        self.flowdict = ipv6sw.Flowdict()
+        self.flowdict["1"] = [self.flow]
+
+    def tearDown(self):
+        pass
+
+    def test_from_file(self):
+        flowdict = ipv6sw.Flowdict()
+        file = "/tmp/_test_json"
+        with open(file, 'w') as f:
+            json.dump(self.dict, f)
+        flowdict.from_file(file)
+        eq_(json.dumps(flowdict), self.json)
+        os.remove(file)
+
+    def test_from_json(self):
+        flowdict = ipv6sw.Flowdict()
+        dict = {"1":[self.flow, self.flow, self.flow], "2":[self.flow], "3":[]}
+        j = json.dumps(dict)
+        flowdict.from_json(j)
+        eq_(json.dumps(flowdict), j)
+
+    def test_to_json_indentFalse(self):
+        eq_(self.flowdict.to_json(), self.json)
+
+    def test_to_json_indentTrue(self):
+        eq_(self.flowdict.to_json(True),
+            json.dumps(self.dict, sort_keys=True, indent=4))
+
+    def test_get_dpids(self):
+        eq_(self.flowdict.get_dpids(), [1])
+
+    def test_get_items(self):
+        eq_(self.flowdict.get_items(), [(1, [self.flow])])
+
+    def test_get_flows_dpid_in_dict(self):
+        eq_(self.flowdict.get_flows(1), [self.flow])
+
+    def test_get_flows_dpid_not_in_dict(self):
+        eq_(self.flowdict.get_flows(2), [])
+
+    def test_check_dp_dpid_in_dpset(self):
+        dpset = _DPSet()
+        dpset.register(_Datapath())
+        ok_(self.flowdict.check_dp(dpset) is None)
+
+    def test_check_dp_dpid_not_in_dpset(self):
+        dpset = _DPSet()
+        eq_(self.flowdict.check_dp(dpset), 1)
+
+
+class TestDpiStatsController(unittest.TestCase):
     """ Test case for StatsController
     """
 

@@ -19,8 +19,9 @@ from ryu.controller import ofp_event
 
 LOG = logging.getLogger(__name__)
 
-TEST_FLOW_STD = {"actions":[{"type":"OUTPUT", "port":1}]}
-TEST_FLOW_PRI = {"actions":[{"type":"OUTPUT", "port":2}]}
+TEST_FLOW_STD = {"actions": [{"type": "OUTPUT", "port": 1}]}
+TEST_FLOW_PRI = {"actions": [{"type": "OUTPUT", "port": 2}]}
+
 
 class _Datapath(object):
     ofproto = ofproto_v1_3
@@ -132,7 +133,7 @@ class TestFlowdict(unittest.TestCase):
 
     def setUp(self):
         self.flow = TEST_FLOW_STD
-        self.dict = {"1":[self.flow]}
+        self.dict = {"1": [self.flow]}
         self.json = json.dumps(self.dict)
         self.flowdict = ipv6sw.Flowdict()
         self.flowdict["1"] = [self.flow]
@@ -151,7 +152,7 @@ class TestFlowdict(unittest.TestCase):
 
     def test_from_json(self):
         flowdict = ipv6sw.Flowdict()
-        dict = {"1":[self.flow, self.flow, self.flow], "2":[self.flow], "3":[]}
+        dict = {"1": [self.flow, self.flow], "2": [self.flow], "3": []}
         j = json.dumps(dict)
         flowdict.from_json(j)
         eq_(json.dumps(flowdict), j)
@@ -311,7 +312,7 @@ class TestDpiRestApi(unittest.TestCase):
     def setUp(self):
         self.dpset = _DPSet()
         self.wsgi = WSGIApplication()
-        self.kwargs = {'dpset':self.dpset, 'wsgi':self.wsgi}
+        self.kwargs = {'dpset': self.dpset, 'wsgi': self.wsgi}
         self.app = ipv6sw.DpiRestApi(**self.kwargs)
 
     def tearDown(self):

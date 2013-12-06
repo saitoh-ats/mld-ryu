@@ -113,6 +113,10 @@ class Test_ipv6sw(unittest.TestCase):
             eq_(msg.command, dp.ofproto.OFPFC_DELETE)
             eq_(msg.cookie, cookies[i])
 
+    def test_wait_barrier(self):
+        ipv6sw.BARRIER_REPLY_TIMER = 0
+        ok_(not ipv6sw.wait_barrier(_Datapath(), {}))
+
 
 class TestFlowdict(unittest.TestCase):
     """ Test case for Flowdict
@@ -204,7 +208,7 @@ class TestDpiStatsController(unittest.TestCase):
 
         return res
 
-    @patch('ryu.dpi.ipv6sw.DpiStatsController._wait_barrier', return_value=True)
+    @patch('ryu.dpi.ipv6sw.wait_barrier', return_value=True)
     def _test_dpi_received_200(self, body, m):
         dp = _Datapath()
         data = self.data

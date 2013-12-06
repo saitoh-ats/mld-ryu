@@ -95,6 +95,25 @@ def del_cookies(dp, cookies):
         mod_flow_entry(dp, flow, cmd)
 
 
+def wait_barrier(dp, waiters):
+    barrier = dp.ofproto_parser.OFPBarrierRequest(dp)
+    dp.set_xid(barrier)
+    waiters_per_dp = waiters.setdefault(dp.id, {})
+    event = hub.Event()
+    waiters_per_dp[barrier.xid] = event
+    LOG.info("<----------------- Barrier Request")
+    LOG.debug("dpid=%s xid=%s timer=%s",
+              dp.id, barrier.xid, BARRIER_REPLY_TIMER)
+    LOG.debug("----------------------------------")
+    dp.send_msg(barrier)
+
+    ret = event.wait(timeout=BARRIER_REPLY_TIMER)
+    if not ret:
+        del waiters_per_dp[barrier.xid]
+
+    return ret
+
+
 class Flowdict(dict):
     """
     flowdict = {<dpid>: [flow, ...], ...}
@@ -149,23 +168,6 @@ class DpiStatsController(StatsController):
         super(DpiStatsController, self).__init__(req, link, data, **config)
         self.dpiflow = data["dpiflow"]
 
-    def _wait_barrier(self, dp):
-        barrier = dp.ofproto_parser.OFPBarrierRequest(dp)
-        dp.set_xid(barrier)
-        waiters_per_dp = self.waiters.setdefault(dp.id, {})
-        event = hub.Event()
-        waiters_per_dp[barrier.xid] = event
-        LOG.info("<----------------- Barrier Request")
-        LOG.debug("dpid=%s xid=%s", dp.id, barrier.xid)
-        LOG.debug("----------------------------------")
-        dp.send_msg(barrier)
-
-        ret = event.wait(timeout=BARRIER_REPLY_TIMER)
-        if not ret:
-            del waiters_per_dp[barrier.xid]
-
-        return ret
-
     def _dpi_flows_cmd(self, dp, flows, cmd):
         if cmd == "on":
             LOG.info("<------------------- Flow-Mod(ADD)")
@@ -176,7 +178,7 @@ class DpiStatsController(StatsController):
 
         LOG.debug("dpid=%s flows=%s", dp.id, len(flows))
         LOG.debug("----------------------------------")
-        return self._wait_barrier(dp)
+        return wait_barrier(dp, self.waiters)
 
     def _dpi_response(self, status, body, err_msg=None):
         if err_msg:
@@ -273,7 +275,7 @@ class DpiRestApi(RestStatsApi):
             dp = ev.dp
             LOG.info("===================> dpset EventDP")
             LOG.info("dpid=%s, xid=%s, dpset=%s",
-                      dp.id, dp.xid, self.dpset.dps.keys())
+                     dp.id, dp.xid, self.dpset.dps.keys())
 
             flow_tag = DPI_FLOWLIST["default"]
             flows = self.dpiflow[flow_tag].get_flows(dp.id)

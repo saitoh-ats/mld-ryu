@@ -9,11 +9,13 @@ import json
 from nose.tools import *
 from mock import patch
 
-from ryu.lib import ofctl_v1_3
+from ryu.lib import hub, ofctl_v1_3
+from ryu.lib.packet import packet
 from ryu.ofproto import ofproto_v1_3, ofproto_v1_3_parser
 from ryu.app.wsgi import ControllerBase, WSGIApplication, route
 from ryu.dpi import ipv6sw
 from ryu.controller.dpset import EventDP
+from ryu.controller import ofp_event
 
 LOG = logging.getLogger(__name__)
 
@@ -113,7 +115,13 @@ class Test_ipv6sw(unittest.TestCase):
             eq_(msg.command, dp.ofproto.OFPFC_DELETE)
             eq_(msg.cookie, cookies[i])
 
-    def test_wait_barrier(self):
+    @patch('hub.Event.wait', return_value=False)
+    def test_wait_barrier_ng(self, m):
+        ipv6sw.BARRIER_REPLY_TIMER = 0
+        ok_(not ipv6sw.wait_barrier(_Datapath(), {}))
+
+    @patch('hub.Event.wait', return_value=True)
+    def test_wait_barrier_ok(self, m):
         ipv6sw.BARRIER_REPLY_TIMER = 0
         ok_(not ipv6sw.wait_barrier(_Datapath(), {}))
 
@@ -221,9 +229,9 @@ class TestDpiStatsController(unittest.TestCase):
         wsgi.register(ipv6sw.DpiStatsController, self.data)
 
         res = self._test_request_dpi(wsgi, '/dpi/flow', 200, 'PUT', body)
-        eq_(res.json, body)
-
         msgs = self.data["dpset"].dps[1].msgs
+
+        eq_(res.json, body)
         eq_(len(msgs), 1)
         ok_(isinstance(msgs[0], dp.ofproto_parser.OFPFlowMod))
         eq_(msgs[0].command, cmd)
@@ -244,6 +252,7 @@ class TestDpiStatsController(unittest.TestCase):
 
     def test_dpi_received_400_body_is_none(self):
         res = self._test_request_dpi(self.wsgi, '/dpi/flow', 400, 'PUT')
+
         ok_('body' in res.json)
         ok_('err_msg' in res.json)
         eq_(res.json['body'], '')
@@ -251,6 +260,7 @@ class TestDpiStatsController(unittest.TestCase):
     def test_dpi_received_400_body_is_not_json(self):
         body = 'test'
         res = self._test_request_dpi(self.wsgi, '/dpi/flow', 400, 'PUT', body)
+
         ok_('body' in res.json)
         ok_('err_msg' in res.json)
         eq_(res.json['body'], body)
@@ -258,6 +268,7 @@ class TestDpiStatsController(unittest.TestCase):
     def test_dpi_received_400_body_has_not_dpi(self):
         body = '{"test": 0}'
         res = self._test_request_dpi(self.wsgi, '/dpi/flow', 400, 'PUT', body)
+
         ok_('body' in res.json)
         ok_('err_msg' in res.json)
         eq_(res.json['body'], body)
@@ -265,6 +276,7 @@ class TestDpiStatsController(unittest.TestCase):
     def test_dpi_received_400_dpi_value_is_invalid(self):
         body = '{"dpi": 0}'
         res = self._test_request_dpi(self.wsgi, '/dpi/flow', 400, 'PUT', body)
+
         ok_('body' in res.json)
         ok_('err_msg' in res.json)
         eq_(res.json['body'], body)
@@ -272,18 +284,111 @@ class TestDpiStatsController(unittest.TestCase):
     def test_dpi_received_500_dpid_not_in_dpset(self):
         body = '{"dpi": "on"}'
         res = self._test_request_dpi(self.wsgi, '/dpi/flow', 500, 'PUT', body)
+
         ok_('body' in res.json)
         ok_('err_msg' in res.json)
         eq_(res.json['body'], body)
 
-    def test_dpi_received_500_BarrierRequest_timeout(self):
-        ipv6sw.BARRIER_REPLY_TIMER = 0.1
+    @patch('ryu.dpi.ipv6sw.wait_barrier', return_value=False)
+    def test_dpi_received_500_BarrierRequest_timeout(self, m):
         data = self.data
         self.data["dpset"].register(_Datapath())
-        LOG.debug(("self.data", self.data["dpset"].get_all()))
-
         wsgi = WSGIApplication()
         wsgi.register(ipv6sw.DpiStatsController, self.data)
 
         body = '{"dpi": "on"}'
         res = self._test_request_dpi(wsgi, '/dpi/flow', 500, 'PUT', body)
+
+        ok_('body' in res.json)
+        ok_('err_msg' in res.json)
+        eq_(res.json['body'], body)
+
+
+class TestDpiRestApi(unittest.TestCase):
+    """ Test case for DpiRestApi
+    """
+
+    def setUp(self):
+        self.dpset = _DPSet()
+        self.wsgi = WSGIApplication()
+        self.kwargs = {'dpset':self.dpset, 'wsgi':self.wsgi}
+        self.app = ipv6sw.DpiRestApi(**self.kwargs)
+
+    def tearDown(self):
+        pass
+
+    def test_init(self):
+        eq_(self.app.dpset, self.dpset)
+        ok_("primary" in self.app.data["dpiflow"])
+        ok_("standard" in self.app.data["dpiflow"])
+        eq_(self.app.data["dpset"], self.dpset)
+        eq_(self.app.data["waiters"], {})
+
+    @patch('ryu.dpi.ipv6sw.is_exist_file', return_value=False)
+    @raises(SystemExit)
+    def test_init_jsonfile_not_exist(self, m):
+        ipv6sw.DpiRestApi(**self.kwargs)
+
+    def test_switch_features_handler_set_packetin(self):
+        dp = _Datapath()
+        msg = dp.ofproto_parser.OFPSwitchFeatures(dp, 1, 0, 0)
+        ev = ofp_event.EventOFPMsgBase(msg)
+        self.app._switch_features_handler(ev)
+        msg = dp.msgs[0]
+        ok_(isinstance(msg, dp.ofproto_parser.OFPFlowMod))
+        eq_(msg.command, dp.ofproto.OFPFC_ADD)
+
+    def test_handler_datapath_dp_enter_True(self):
+        dp = _Datapath()
+        ev = EventDP(dp, True)
+        self.app._handler_datapath(ev)
+        msg = dp.msgs[0]
+        ok_(isinstance(msg, dp.ofproto_parser.OFPFlowMod))
+        eq_(msg.command, dp.ofproto.OFPFC_ADD)
+
+    def test_handler_datapath_dp_enter_False(self):
+        dp = _Datapath()
+        ev = EventDP(dp, False)
+        self.app._handler_datapath(ev)
+        eq_(dp.msgs, [])
+
+    def _get_ev_barrier_reply(self):
+        xid = 1
+        dp = _Datapath()
+        msg = dp.ofproto_parser.OFPBarrierReply(dp)
+        msg.set_xid(xid)
+        msg.serialize()
+        ev = ofp_event.EventOFPMsgBase(msg)
+
+        return ev, dp, xid
+
+    def test_barrier_reply_handler_event_wait(self):
+        ev, dp, xid = self._get_ev_barrier_reply()
+        event = hub.Event()
+        waiter = self.app.waiters.setdefault(dp.id, {})
+        waiter[xid] = event
+
+        self.app._barrier_reply_handler(ev)
+
+        eq_(self.app.waiters[dp.id], {})
+
+    def test_barrier_reply_handler_xid_not_in_waiters(self):
+        ev, dp, xid = self._get_ev_barrier_reply()
+        self.app.waiters.setdefault(dp.id, {})
+        self.app._barrier_reply_handler(ev)
+        eq_(self.app.waiters[dp.id], {})
+
+    def test_barrier_reply_handler_xid_not_in_waiters(self):
+        ev, dp, xid = self._get_ev_barrier_reply()
+        LOG.debug(self.app.waiters)
+        self.app.waiters = {}
+        self.app._barrier_reply_handler(ev)
+        eq_(self.app.waiters, {})
+
+    def test_packet_in_handler(self):
+        pkt = packet.Packet()
+        dp = _Datapath()
+        match = dp.ofproto_parser.OFPMatch(in_port=1)
+        msg = dp.ofproto_parser.OFPPacketIn(dp, 0, 0, 0, 0, 0, match, pkt)
+        ev = ofp_event.EventOFPMsgBase(msg)
+        self.app._packet_in_handler(ev)

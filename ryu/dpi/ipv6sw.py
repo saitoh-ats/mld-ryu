@@ -114,6 +114,10 @@ def wait_barrier(dp, waiters):
     return ret
 
 
+def is_exist_file(file):
+    return os.path.isfile(file)
+
+
 class Flowdict(dict):
     """
     flowdict = {<dpid>: [flow, ...], ...}
@@ -183,7 +187,7 @@ class DpiStatsController(StatsController):
     def _dpi_response(self, status, body, err_msg=None):
         if err_msg:
             _dpi_body = {"err_msg": err_msg, "body": body}
-            LOG.info("### REST-ERR: %s: %s", err_msg, str(body))
+            LOG.error("### REST-ERR: %s: %s", err_msg, str(body))
         else:
             _dpi_body = body
         return webob.Response(content_type="application/json",
@@ -222,7 +226,6 @@ class DpiStatsController(StatsController):
             LOG.debug("FlowMod dpid=%s flows=%s", dp.id, flow_tag)
             if not self._dpi_flows_cmd(dp, flows, dpi_cmd):
                 err_msg = "BarrierRequest Timeout. [dpid=%s]" % dp.id
-                LOG.error(err_msg)
                 return self._dpi_response(500, body, err_msg)
 
         return self._dpi_response(200, body)
@@ -240,14 +243,14 @@ class DpiRestApi(RestStatsApi):
         LOG.debug("args=%s, kwargs=%s", args, kwargs)
 
         for f in JSONFILE:
-            fname = os.path.join(JSONPATH, f)
-            if os.path.isfile(fname):
+            filepath = os.path.join(JSONPATH, f)
+            if is_exist_file(filepath):
                 self.dpiflow[f] = Flowdict()
-                self.dpiflow[f].from_file(fname)
-                LOG.info("FlowFile=[%s]: %s", f, fname)
+                self.dpiflow[f].from_file(filepath)
+                LOG.info("FlowFile=[%s]: %s", f, filepath)
                 LOG.debug("flows: %s\n", self.dpiflow[f].to_json())
             else:
-                LOG.error("### Init-ERR: cannot access [%s]", fname)
+                LOG.error("### Init-ERR: cannot access [%s]", f)
                 exit(1)
 
         self.data["dpiflow"] = self.dpiflow
@@ -262,10 +265,9 @@ class DpiRestApi(RestStatsApi):
         LOG.info("==================> SwitchFeatures")
         LOG.info("dpid=%s, dpset=%s", dp.id, self.dpset.get_all())
 
-        if dp.ofproto.OFP_VERSION == ofproto_v1_3.OFP_VERSION:
-            flows = [FLOW_PKT_IN]
-            LOG.debug("FlowMod dpid=%s flows=PacketIn", dp.id)
-            add_flows(dp, flows)
+        flows = [FLOW_PKT_IN]
+        LOG.debug("FlowMod dpid=%s flows=PacketIn", dp.id)
+        add_flows(dp, flows)
 
         LOG.debug("==================================")
 

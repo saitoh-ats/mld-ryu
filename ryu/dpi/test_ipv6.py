@@ -116,15 +116,15 @@ class Test_ipv6sw(unittest.TestCase):
             eq_(msg.command, dp.ofproto.OFPFC_DELETE)
             eq_(msg.cookie, cookies[i])
 
-    @patch('hub.Event.wait', return_value=False)
+    @patch('ryu.lib.hub.Event.wait', return_value=False)
     def test_wait_barrier_ng(self, m):
         ipv6sw.BARRIER_REPLY_TIMER = 0
         ok_(not ipv6sw.wait_barrier(_Datapath(), {}))
 
-    @patch('hub.Event.wait', return_value=True)
+    @patch('ryu.lib.hub.Event.wait', return_value=True)
     def test_wait_barrier_ok(self, m):
         ipv6sw.BARRIER_REPLY_TIMER = 0
-        ok_(not ipv6sw.wait_barrier(_Datapath(), {}))
+        ok_(ipv6sw.wait_barrier(_Datapath(), {}))
 
 
 class TestFlowdict(unittest.TestCase):

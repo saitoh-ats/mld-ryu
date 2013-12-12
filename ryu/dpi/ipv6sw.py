@@ -103,10 +103,6 @@ def wait_barrier(dp, waiters):
     return ret
 
 
-def is_exist_file(file):
-    return os.path.isfile(file)
-
-
 class Flowdict(dict):
     """
     Flowdict
@@ -233,13 +229,14 @@ class DpiRestApi(RestStatsApi):
 
         for f in JSONFILE:
             filepath = os.path.join(JSONPATH, f)
-            if is_exist_file(filepath):
+            try:
                 self.dpiflow[f] = Flowdict()
                 self.dpiflow[f].from_file(filepath)
                 LOG.info("FlowFile=[%s]: %s", f, filepath)
                 LOG.debug("flows: %s\n", self.dpiflow[f].to_json())
-            else:
-                LOG.error("### Init-ERR: cannot access [%s]", f)
+            except Exception as e:
+                LOG.error("### Init-ERR: %s", e)
+                LOG.debug("  --> file=%s", filepath)
                 exit(1)
 
         self.data["dpiflow"] = self.dpiflow

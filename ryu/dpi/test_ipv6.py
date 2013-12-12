@@ -62,7 +62,7 @@ class Test_ipv6sw(unittest.TestCase):
     """
 
     def setUp(self):
-        pass
+        reload(ipv6sw)
 
     def tearDown(self):
         pass
@@ -310,6 +310,7 @@ class TestDpiRestApi(unittest.TestCase):
     """
 
     def setUp(self):
+        reload(ipv6sw)
         self.dpset = _DPSet()
         self.wsgi = WSGIApplication()
         self.kwargs = {'dpset': self.dpset, 'wsgi': self.wsgi}
@@ -325,9 +326,9 @@ class TestDpiRestApi(unittest.TestCase):
         eq_(self.app.data["dpset"], self.dpset)
         eq_(self.app.data["waiters"], {})
 
-    @patch('ryu.dpi.ipv6sw.is_exist_file', return_value=False)
     @raises(SystemExit)
-    def test_init_jsonfile_not_exist(self, m):
+    def test_init_jsonfile_not_exist(self):
+        ipv6sw.JSONFILE = ["test_not_exist"]
         ipv6sw.DpiRestApi(**self.kwargs)
 
     def test_switch_features_handler_set_packetin(self):

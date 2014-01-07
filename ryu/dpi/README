@@ -1,0 +1,40 @@
+Quick start
+===========
+
+    % ryu-manager --verbose ryu/dpi/ipv6sw.py
+
+REST API
+========
+
+    # GET
+    % curl http://SDNHOST:8080/stats/switches
+    % curl http://SDNHOST:8080/stats/desc/<dpid>
+    % curl http://SDNHOST:8080/stats/flow/<dpid>
+    % curl http://SDNHOST:8080/stats/port/<dpid>
+    % curl ... | python -mjson.tool
+
+    # PUT
+    % curl http://SDNHOST:8080/dpi/flow -X PUT -d "{'dpi':'on'}"
+
+    # DELETE
+    % curl http://SDNHOST:8080/stats/flowentry/clear/<dpid> -X DELETE
+
+OVS commands
+============
+
+    # ovs-vsctl show
+    # ovs-vsctl list bridge
+    # ovs-vsctl list controller
+    # ovs-vsctl list port
+
+    # ovs-dpctl show
+
+    # ovs-ofctl show <br>
+    # ovs-ofctl dump-flows <br>
+    # ovs-ofctl dump-ports <br>
+    # ovs-ofctl dump-ports-desc <br>
+
+    # ovs-ofctl snoop <br>
+    # ovs-appctl dpif/dump-flows <br>
+
+    # ovsdb-tool show-log

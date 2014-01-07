@@ -1,0 +1,81 @@
+{
+    "1": [
+        {
+            "match": {
+                    "eth_type": 34525,
+                    "ipv6_src": "2001:db8:2000::111",
+                    "ipv6_dst": ["ff02::", "ffff:ffff:ffff:ffff::"]
+            },
+            "actions": [
+                {
+                    "port": 3,
+                    "type": "OUTPUT"
+                },
+                {
+                    "port": 4,
+                    "type": "OUTPUT"
+                }
+            ],
+            "cookie": 1,
+            "priority": 100
+        },
+        {
+            "match": {
+                    "eth_type": 34525,
+                    "ipv6_src": "2001:db8:2000::14"
+            },
+            "actions": [
+                {
+                    "port": 1,
+                    "type": "OUTPUT"
+                }
+            ],
+            "cookie": 1,
+            "priority": 100
+        },
+        {
+            "match": {
+                    "eth_type": 34525,
+                    "ipv6_dst": "2001:db8:2000::14"
+            },
+            "actions": [
+                {
+                    "port": 3,
+                    "type": "OUTPUT"
+                }
+            ],
+            "cookie": 1,
+            "priority": 100
+        }
+    ],
+    "4": [
+        {
+            "match": {
+                    "eth_type": 34525,
+                    "ipv6_src": "2001:db8:2000::111"
+            },
+            "actions": [
+                {
+                    "port": 3,
+                    "type": "OUTPUT"
+                }
+            ],
+            "cookie": 1,
+            "priority": 100
+        },
+        {
+            "match": {
+                    "eth_type": 34525,
+                    "ipv6_src": "2001:db8:2000::14"
+            },
+            "actions": [
+                {
+                    "port": 1,
+                    "type": "OUTPUT"
+                }
+            ],
+            "cookie": 1,
+            "priority": 100
+        }
+    ]
+}

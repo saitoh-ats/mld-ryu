@@ -1,7 +1,11 @@
 Quick start
 ===========
 
+    # simple; debug-logging; output Console only
     % ryu-manager --verbose ryu/dpi/ipv6sw.py
+
+    # output Console and LogFile
+    % ryu-manager --verbose ryu/dpi/ipv6sw.py --log-file /var/tmp/ryu.log
 
 REST API
 ========
@@ -34,7 +38,7 @@ OVS commands
     # ovs-ofctl dump-ports <br>
     # ovs-ofctl dump-ports-desc <br>
 
-    # ovs-ofctl snoop <br>
+    # ovs-ofctl snoop <br> [--timestamp] [2>&1 | grep -v ECHO]
     # ovs-appctl dpif/dump-flows <br>
 
     # ovsdb-tool show-log

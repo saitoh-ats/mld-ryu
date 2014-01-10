@@ -56,7 +56,7 @@
             },
             "actions": [
                 {
-                    "port": 3,
+                    "port": 2,
                     "type": "OUTPUT"
                 }
             ],

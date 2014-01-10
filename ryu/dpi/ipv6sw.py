@@ -74,7 +74,7 @@ def add_flows(dp, flows):
 def del_flows(dp, flows):
     LOG.info("<---------------- Flow-Mod(DELETE) [dp=%s, flows=%s]",
              dp.id, len(flows))
-    cmd = dp.ofproto.OFPFC_DELETE
+    cmd = dp.ofproto.OFPFC_DELETE_STRICT
     for flow in flows:
         mod_flow_entry(dp, flow, cmd)
 

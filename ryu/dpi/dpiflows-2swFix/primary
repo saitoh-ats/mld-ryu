@@ -2,8 +2,8 @@
     "1": [
         {
             "match": {
+                    "in_port": 2,
                     "eth_type": 34525,
-                    "ipv6_src": "fe80::200:ff:fe00:2",
                     "ipv6_dst": ["ff02::", "ffff:ffff:ffff:ffff::"]
             },
             "actions": [
@@ -16,13 +16,14 @@
                     "type": "OUTPUT"
                 }
             ],
-            "cookie": 2,
+            "cookie": 1,
             "priority": 200
         },
         {
             "match": {
+                    "in_port": 4,
                     "eth_type": 34525,
-                    "ipv6_src": "fe80::200:ff:fe00:4"
+                    "ipv6_dst": ["ff02::", "ffff:ffff:ffff:ffff::"]
             },
             "actions": [
                 {
@@ -36,11 +37,11 @@
         {
             "match": {
                     "eth_type": 34525,
-                    "ipv6_dst": "fe80::200:ff:fe00:4"
+                    "ipv6_dst": "2001:db8:2000::111"
             },
             "actions": [
                 {
-                    "port": 4,
+                    "port": 2,
                     "type": "OUTPUT"
                 }
             ],
@@ -48,33 +49,15 @@
             "priority": 200
         }
     ],
-    "2": [
-    ],
-    "3": [
-    ],
     "4": [
         {
             "match": {
                     "eth_type": 34525,
-                    "ipv6_src": "fe80::200:ff:fe00:2"
+                    "ipv6_src": "2001:db8:2000::111"
             },
             "actions": [
                 {
-                    "port": 4,
-                    "type": "OUTPUT"
-                }
-            ],
-            "cookie": 2,
-            "priority": 200
-        },
-        {
-            "match": {
-                    "eth_type": 34525,
-                    "ipv6_src": "fe80::200:ff:fe00:4"
-            },
-            "actions": [
-                {
-                    "port": 2,
+                    "port": 3,
                     "type": "OUTPUT"
                 }
             ],

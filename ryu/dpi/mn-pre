@@ -1,0 +1,5 @@
+d1 ifconfig d1-eth0 inet add 2001:db8:2000::11
+d1 ifconfig d1-eth0 inet add 2001:db8:2000::111
+w1 ifconfig w1-eth0 inet add 2001:db8:2000::13
+w2 ifconfig w2-eth0 inet add 2001:db8:2000::14
+sh (sleep 2;./mn-init) &

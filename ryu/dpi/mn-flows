@@ -1,0 +1,4 @@
+echo --- s1 ---
+ovs-ofctl dump-flows s1
+echo --- s4 ---
+ovs-ofctl dump-flows s4

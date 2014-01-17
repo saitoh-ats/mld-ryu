@@ -1,18 +1,23 @@
 """
 Custom topology for DPI
 
-d1                   s2                   w1
+                     s2                   w1
  (1)---(1)  (3)---(1)  (2)---(1)  (3)---(1)
-          s4                    s1
+d1          s4                    s1
  (1)---(2)  (4)---(1)  (2)---(2)  (4)---(1)
-d2                   s3                   w2
+                     s3                   w2
 
 d1(1)=d1-eth0: 10.0.0.1 / fe80::200:ff:fe00:1
-d2(1)=d2-eth0: 10.0.0.2 / fe80::200:ff:fe00:2
-w1(1)=w2-eth0: 10.0.0.3 / fe80::200:ff:fe00:3
-w2(1)=w2-eth0: 10.0.0.4 / fe80::200:ff:fe00:4
+               2001:db8:2000::11
+               2001:db8:2000::111
+w1(1)=w2-eth0: 10.0.0.2 / fe80::200:ff:fe00:2
+               2001:db8:2000::13
+w2(1)=w2-eth0: 10.0.0.3 / fe80::200:ff:fe00:3
+               2001:db8:2000::14
 
-$ sudo mn --mac --custom topo-dpi.py --topo dpi'
+sudo mn --mac --custom topo-dpi.py --topo dpi
+sudo mn --mac --controller remote --custom topo-dpi.py --topo dpi --pre mn-pre
+
 """
 
 from mininet.topo import Topo
@@ -31,7 +36,6 @@ class MyTopo(Topo):
 
         # Add hosts and switches
         DPI1 = self.addHost('d1')
-        DPI2 = self.addHost('d2')
         Edge4 = self.addSwitch('s4')
         Bridge2 = self.addSwitch('s2')
         Bridge3 = self.addSwitch('s3')
@@ -41,7 +45,6 @@ class MyTopo(Topo):
 
         # Add links
         self.addLink(Edge4, DPI1)
-        self.addLink(Edge4, DPI2)
         self.addLink(Edge4, Bridge2)
         self.addLink(Edge4, Bridge3)
         self.addLink(Edge1, Bridge2)

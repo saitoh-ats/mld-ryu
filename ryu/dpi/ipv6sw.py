@@ -23,7 +23,7 @@ FLOW_PKT_IN = {
     "actions": [{"type": "OUTPUT", "port": 0xfffffffd, "max_len": 65535}]}
 
 # Static
-DPI_FLOWLIST = {"default": "standard", "dpi": "primary"}
+DPI_FLOWLIST = {"default": "standard", "dpi": "premium"}
 JSONFILE = DPI_FLOWLIST.values()
 JSONDIR = "dpiflows"
 JSONPATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), JSONDIR)

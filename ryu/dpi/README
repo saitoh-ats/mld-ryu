@@ -7,6 +7,9 @@ Quick start
     # output Console and LogFile
     % ryu-manager --verbose ryu/dpi/ipv6sw.py --log-file /var/tmp/ryu.log
 
+    # to record the timestamp in log
+    % ryu-manager ryu/dpi/ipv6sw.py --log-config-file ryu/dpi/log.ini
+
 REST API
 ========
 

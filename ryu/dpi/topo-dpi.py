@@ -3,20 +3,19 @@ Custom topology for DPI
 
                      s2                   w1
  (1)---(1)  (3)---(1)  (2)---(1)  (3)---(1)
-d1          s4                    s1
+d1        s4                    s1
  (1)---(2)  (4)---(1)  (2)---(2)  (4)---(1)
                      s3                   w2
 
 d1(1)=d1-eth0: 10.0.0.1 / fe80::200:ff:fe00:1
                2001:db8:2000::11
                2001:db8:2000::111
-w1(1)=w2-eth0: 10.0.0.2 / fe80::200:ff:fe00:2
+w1(1)=w1-eth0: 10.0.0.2 / fe80::200:ff:fe00:2
                2001:db8:2000::13
 w2(1)=w2-eth0: 10.0.0.3 / fe80::200:ff:fe00:3
                2001:db8:2000::14
 
-sudo mn --mac --custom topo-dpi.py --topo dpi
-sudo mn --mac --controller remote --custom topo-dpi.py --topo dpi --pre mn-pre
+$ sudo mn --mac --controller remote --custom topo-dpi.py --topo dpi --pre mn-pre
 
 """
 

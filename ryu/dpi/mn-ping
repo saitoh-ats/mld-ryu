@@ -1,4 +1,9 @@
+#
+# mininet> d1 ./mn-ping
+#
 echo --- standard to web1 ---
 ping6 -I 2001:db8:2000::11 2001:db8:2000::13 -c 5
-echo --- standard to web2 ---
+echo --- premium to web1 ---
+ping6 -I 2001:db8:2000::111 2001:db8:2000::13 -c 5
+echo --- premium to web2 ---
 ping6 -I 2001:db8:2000::111 2001:db8:2000::14 -c 5

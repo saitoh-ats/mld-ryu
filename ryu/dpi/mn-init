@@ -1,5 +1,5 @@
 #
-# mininet> sh ./post
+# mininet> sh ./mn-init
 #
 ovs-ofctl del-flows s1
 ovs-ofctl del-flows s2

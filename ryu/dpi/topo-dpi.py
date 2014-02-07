@@ -4,7 +4,7 @@ Custom topology for DPI
  startup
  =======
  $ sudo mn --controller remote --custom topo-dpi.py --pre mn-pre \
-     --topo [dpi|dpi-w1]
+     --topo [dpi|dpi-w1|dpi-r3]
 
  or
 
@@ -14,17 +14,31 @@ Custom topology for DPI
  topo=dpi: DPI and WebServer-2
  =============================
 
-              (2)---(1)s2(2)---(1)  (3)---(1)w1
+                /---(1)s2(2)---\
+              (2)              (1)  (3)---(1)w1
  d1(1)---(1)s4                    s1
-              (3)---(1)s3(2)---(2)  (4)---(1)w2
+              (3)              (2)  (4)---(1)w2
+                \---(1)s3(2)---/
 
 
  topo=dpi-w1: DPI and WebServer-1
  ================================
 
-              (2)---(1)s2(2)---(1)
+                /---(1)s2(2)---\
+              (2)              (1)
  d1(1)---(1)s4                    s1(3)---(1)w1
-              (3)---(1)s3(2)---(2)
+              (3)              (2)
+                \---(1)s3(2)---/
+
+
+ topo=dpi-r3: DPI and WebServer-1 by 3-routes
+ ============================================
+
+                /---(1)s2(2)---\
+              (2)              (1)
+ d1(1)---(1)s4(4)--------------(4)s1(3)---(1)w1
+              (3)              (2)
+                \---(1)s3(2)---/
 
 
  host interfaces
@@ -81,7 +95,17 @@ class DpiTopoWeb2(DpiTopoWeb1):
         self.addLink(self.Edge1, self.Web2)
 
 
-topos = {'dpi': (lambda: DpiTopoWeb2()), 'dpi-w1': (lambda: DpiTopoWeb1())}
+class DpiTopoWeb1Route3(DpiTopoWeb1):
+    def __init__(self):
+        DpiTopoWeb1.__init__(self)
+
+        # Add links
+        self.addLink(self.Edge1, self.Edge4)
+
+
+topos = {'dpi': (lambda: DpiTopoWeb2()),
+         'dpi-w1': (lambda: DpiTopoWeb1()),
+         'dpi-r3': (lambda: DpiTopoWeb1Route3())}
 
 
 from mininet.net import Mininet
@@ -114,7 +138,7 @@ bridge_list = ['s2', 's3']
 
 if '__main__' == __name__:
     setLogLevel('info')
-    net = Mininet(topo=DpiTopoWeb2())
+    net = Mininet(topo=DpiTopoWeb1Route3())
     net.start()
 
     # set ofp version

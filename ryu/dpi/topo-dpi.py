@@ -6,6 +6,10 @@ Custom topology for DPI
  $ sudo mn --controller remote --custom topo-dpi.py --pre mn-pre \
      --topo [dpi|dpi-w1]
 
+ or
+
+ $ sudo python ./topo-dpi.py
+
 
  topo=dpi: DPI and WebServer-2
  =============================
@@ -78,3 +82,52 @@ class DpiTopoWeb2(DpiTopoWeb1):
 
 
 topos = {'dpi': (lambda: DpiTopoWeb2()), 'dpi-w1': (lambda: DpiTopoWeb1())}
+
+
+from mininet.net import Mininet
+from mininet.log import setLogLevel
+from mininet.cli import CLI
+
+
+def set_ofp_version(switch, protocols):
+    protocols_str = ','.join(protocols)
+    command = 'ovs-vsctl set Bridge %s protocols=%s' % (switch, protocols_str)
+    switch.cmd(command.split(' '))
+
+
+def add_ipv6address(host, inf, ipv6s):
+    print '*** %s setup IPv6 addresses' % host
+    for ipv6 in ipv6s:
+        host.cmd('ifconfig', inf, 'inet add', ipv6)
+    print host.cmd('ifconfig', inf)
+
+
+def set_normalsw(switch):
+    print '*** %s is Bridge:' % switch
+    switch.cmd('ovs-ofctl add-flow', switch, 'actions=normal')
+    print switch.cmd('ovs-ofctl dump-flows', switch)
+
+ipv6_list = {'d1': {'d1-eth0': ['2001:db8:2000::11', '2001:db8:2000::111']},
+             'w1': {'w1-eth0': ['2001:db8:2000::13']},
+             'w2': {'w2-eth0': ['2001:db8:2000::13']}}
+bridge_list = ['s2', 's3']
+
+if '__main__' == __name__:
+    setLogLevel('info')
+    net = Mininet(topo=DpiTopoWeb2())
+    net.start()
+
+    # set ofp version
+    for sw in net.switches:
+        set_ofp_version(sw, ['OpenFlow10', 'OpenFlow13'])
+        # setup normal SW
+        if sw.name in bridge_list:
+            set_normalsw(sw)
+
+    # add IPv6 addresses
+    for host in net.hosts:
+        for inf, ipv6s in ipv6_list[host.name].iteritems():
+            add_ipv6address(host, inf, ipv6s)
+
+    CLI(net)
+    net.stop()

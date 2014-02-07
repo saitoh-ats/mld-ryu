@@ -47,6 +47,7 @@ Custom topology for DPI
                 fe80::200:ff:fe00:1
                 2001:db8:2000::11
                 2001:db8:2000::111
+                2001:db8:2000::1111
  w1(1)=w1-eth0: 10.0.0.2
                 fe80::200:ff:fe00:2
                 2001:db8:2000::13
@@ -131,7 +132,9 @@ def set_normalsw(switch):
     switch.cmd('ovs-ofctl add-flow', switch, 'actions=normal')
     print switch.cmd('ovs-ofctl dump-flows', switch)
 
-ipv6_list = {'d1': {'d1-eth0': ['2001:db8:2000::11', '2001:db8:2000::111']},
+ipv6_list = {'d1': {'d1-eth0': ['2001:db8:2000::11',
+                                '2001:db8:2000::111',
+                                '2001:db8:2000::1111']},
              'w1': {'w1-eth0': ['2001:db8:2000::13']},
              'w2': {'w2-eth0': ['2001:db8:2000::13']}}
 bridge_list = ['s2', 's3']

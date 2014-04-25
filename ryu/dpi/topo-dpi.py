@@ -112,6 +112,7 @@ topos = {'dpi': (lambda: DpiTopoWeb2()),
 from mininet.net import Mininet
 from mininet.log import setLogLevel
 from mininet.cli import CLI
+from mininet.node import RemoteController
 
 
 def set_ofp_version(switch, protocols):
@@ -141,7 +142,8 @@ bridge_list = ['s2', 's3']
 
 if '__main__' == __name__:
     setLogLevel('info')
-    net = Mininet(topo=DpiTopoWeb1Route3())
+    net = Mininet(topo=DpiTopoWeb1Route3(),
+                  controller=lambda name: RemoteController(name))
     net.start()
 
     # set ofp version

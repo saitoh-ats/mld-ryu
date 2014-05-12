@@ -1,0 +1,66 @@
+{
+    "hosts" : [
+	{
+	    "host_name" : "d1",
+	    "inf_list" : [
+		{
+		    "inf_name" : "d1-eth0",
+		    "addr_list" : [
+			"2001:db8:2000::11",
+			"2001:db8:2000::111",
+			"2001:db8:2000::1111"
+		    ]
+		}
+	    ]
+	},
+	{
+	    "host_name" : "w1",
+	    "inf_list" : [
+		{
+		    "inf_name" : "w1-eth0",
+		    "addr_list" : [
+			"2001:db8:2000::13"
+		    ]
+		}
+	    ]
+	},
+	{
+	    "host_name" : "w2",
+	    "inf_list" : [
+		{
+		    "inf_name" : "w2-eth0",
+		    "addr_list" : [
+			"2001:db8:2000::13"
+		    ]
+		}
+	    ]
+	}
+    ],
+    "switches" : [
+	{
+	    "switch-name" : "s1",
+	    "bridge" : false
+	},
+	{
+	    "switch-name" : "s2",
+	    "bridge" : true
+	},
+	{
+	    "switch-name" : "s3",
+	    "bridge" : true
+	},
+	{
+	    "switch-name" : "s4",
+	    "bridge" : false
+	}
+    ],
+    "links" : [
+	["s4","d1"],
+	["s4","s2"],
+	["s4","s3"],
+	["s1","s2"],
+	["s1","s3"],
+	["s1","w1"],
+	["s1","w2"]
+    ]
+}

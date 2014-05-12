@@ -1,11 +1,17 @@
 """
 Custom topology for general purpose using definition file
 
-!!! limitation !!!
+ Usage of this class is similar to topo-dpi.py
 
-1. This class can't use for mininet option.
+ startup
+ =======
+ $ sudo mn --controller remote --custom custom-topo.py --pre mn-pre \
+     --topo [dpi|dpi-w1|dpi-r3]
 
-   $ 
+ or
+
+ $ sudo python ./custom-topo.py -f definition_file_path
+
 
 """
 
@@ -17,6 +23,9 @@ from mininet.node import RemoteController
 import json
 import sys
 import argparse
+
+topos = {'dpi': (lambda: CustomTopo("./dpi_to_web2.json")),
+         'simple': (lambda: CustomTopo("./simple_topo.json"))}
 
 class CustomTopo(Topo):
     def __init__(self, topoDefFile):
@@ -153,11 +162,6 @@ class CustomTopo(Topo):
         print '*** %s is Bridge:' % switch
         switch.cmd('ovs-ofctl add-flow', switch, 'actions=normal')
         print switch.cmd('ovs-ofctl dump-flows', switch)
-
-
-topos = {'dpi': (lambda: CustomTopo("./dpi_to_web2.json")),
-         'dpi-w1': (lambda: CustomTopo("./dpi_to_web2.json")),
-         'dpi-r3': (lambda: CustomTopo("./dpi_to_web2.json"))}
 
 #
 #

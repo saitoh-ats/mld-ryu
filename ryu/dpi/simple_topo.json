@@ -1,0 +1,36 @@
+{
+    "hosts" : [
+	{
+	    "host_name" : "h1",
+	    "inf_list" : [
+		{
+		    "inf_name" : "h1-eth0",
+		    "addr_list" : [
+			"2001:db8:2000::11"
+		    ]
+		}
+	    ]
+	},
+	{
+	    "host_name" : "h2",
+	    "inf_list" : [
+		{
+		    "inf_name" : "h2-eth0",
+		    "addr_list" : [
+			"2001:db8:2000::12"
+		    ]
+		}
+	    ]
+	}
+    ],
+    "switches" : [
+	{
+	    "switch-name" : "s1",
+	    "bridge" : true
+	}
+    ],
+    "links" : [
+	["h1","s1"],
+	["s1","h2"]
+    ]
+}

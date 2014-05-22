@@ -89,7 +89,7 @@ class CustomTopo(Topo):
     def add_hosts(self):
         hosts = self.jsonData["hosts"]
         if False == isinstance(hosts, list):
-            print >> sys.stderr, "ERROR: hostss must be list."
+            print >> sys.stderr, "ERROR: hosts must be list."
             return False
         for hostEntry in hosts:
             if False == isinstance(hostEntry, dict):
@@ -149,14 +149,14 @@ class CustomTopo(Topo):
 
     def add_ipv6address(self, host):
         hostEntry = self.hostList[host.name][1]
-        infEntry = hostEntry["inf_list"][0] # ad hoc
-        inf = infEntry["inf_name"].encode("ascii")
-        addrList = infEntry["addr_list"]
-        addrList = map(lambda x: x.encode("ascii"), addrList)
-        print '*** %s setup IPv6 addresses' % host
-        for ipv6 in addrList:
-            host.cmd('ifconfig', inf, 'inet add', ipv6.encode("ascii"))
-            print host.cmd('ifconfig', inf)
+        for infEntry in hostEntry["inf_list"]:
+            inf = infEntry["inf_name"].encode("ascii")
+            addrList = infEntry["addr_list"]
+            addrList = map(lambda x: x.encode("ascii"), addrList)
+            print '*** %s setup IPv6 addresses' % host
+            for ipv6 in addrList:
+                host.cmd('ifconfig', inf, 'inet add', ipv6.encode("ascii"))
+                print host.cmd('ifconfig', inf)
     
     def set_normalsw(self, switch):
         print '*** %s is Bridge:' % switch

@@ -42,7 +42,7 @@
     ],
     "switches" : [
 	{
-	    "switch-name" : "s1",
+	    "switch_name" : "s1",
 	    "bridge" : true
 	}
     ],

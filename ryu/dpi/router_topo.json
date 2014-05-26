@@ -54,24 +54,28 @@
     ],
     "switches" : [
 	{
-	    "switch-name" : "s1",
+	    "switch_name" : "s1",
 	    "bridge" : true
 	},
 	{
-	    "switch-name" : "s2",
+	    "switch_name" : "s2",
 	    "bridge" : true
 	},
 	{
-	    "switch-name" : "s3",
+	    "switch_name" : "s3",
 	    "bridge" : true
 	}
     ],
+    "_comment" : "linksの記述にインターフェースを明示的に書ける。コロンデリミタ。省略時は空いてるやつから若い順。switchに関しては指定不可",
+    "_comment" : "省略表記と省略しない表記を混在させると予期せぬトポロジーになりかねないので注意",
     "links" : [
-	["h1","r1"],
-	["r1","s1"],
+	["r1:r1-eth1","s1"],
+	["r1:r1-eth0","h1"],
 	["s1","s2"],
 	["s1","s3"],
 	["s2","h2"],
 	["s3","h3"]
-    ]
+    ],
+    "pre_cmd_file" : "./pre_exec",
+    "post_cmd_file" : "./post_exec"
 }

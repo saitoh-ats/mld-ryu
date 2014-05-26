@@ -1,0 +1,2 @@
+r1:pkill xorp_rtrmgr
+r1:sleep 60

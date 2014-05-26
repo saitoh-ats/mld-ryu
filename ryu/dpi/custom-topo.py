@@ -78,12 +78,25 @@ class CustomTopo(Topo):
             isBridge = swEntry["bridge"]
             if isBridge:
                 self.set_normalsw(sw)
+            self.switchList[sw.name].append(sw)
 
         # setup each host
         for host in net.hosts:
             self.add_ipv6address(host)
+            self.hostList[host.name].append(host)
+
+        # execute pre_command
+        if self.jsonData.has_key("pre_cmd_file"):
+            cmd_file = self.jsonData["pre_cmd_file"]
+            self.exec_usercmd(cmd_file)
 
         CLI(net)
+
+        # execute post_command
+        if self.jsonData.has_key("post_cmd_file"):
+            cmd_file = self.jsonData["post_cmd_file"]
+            self.exec_usercmd(cmd_file)
+
         net.stop()
 
     def add_hosts(self):
@@ -108,7 +121,7 @@ class CustomTopo(Topo):
             if False == isinstance(swEntry, dict):
                 print >> sys.stderr, "ERROR: swEntry must be dict."
                 return False
-            swName = swEntry["switch-name"].encode("ascii")
+            swName = swEntry["switch_name"].encode("ascii")
             sw = self.addSwitch(swName)
             self.switchList[swName] = [sw, swEntry]
 
@@ -123,24 +136,34 @@ class CustomTopo(Topo):
                 return False
             n1entry = linkEntry[0]
             n2entry = linkEntry[1]
-            n1 = self.find_node(n1entry)
-            n2 = self.find_node(n2entry)
+            (n1,p1) = self.find_node(n1entry)
+            (n2,p2) = self.find_node(n2entry)
             if None != n1 and None != n2:
-                self.addLink(n1, n2)
+                self.addLink(n1, n2, p1, p2)
             else:
                 return False
 
     def find_node(self, entry):
         # find entry in hostList
+        port = None
+        if ":" in entry:
+            entry, port = entry.split(":")
         if self.hostList.has_key(entry):
-            return self.hostList[entry][0].encode("ascii")
+            hostEntry = self.hostList[entry][1]
+            idx = 0
+            for infEntry in hostEntry["inf_list"]:
+                if infEntry["inf_name"] == port:
+                    port = idx
+                    break
+                idx += 1
+            return (self.hostList[entry][0].encode("ascii"), port)
         # find entry in switchlist
         elif self.switchList.has_key(entry):
-            return self.switchList[entry][0].encode("ascii")
+            return (self.switchList[entry][0].encode("ascii"), port)
         else:
             # if not found, return None
             print >> sys.stderr, "ERROR: %s is not exist." % entry
-            return None
+            return None, None
 
     def set_ofp_version(self, switch, protocols):
         protocols_str = ','.join(protocols)
@@ -162,6 +185,26 @@ class CustomTopo(Topo):
         print '*** %s is Bridge:' % switch
         switch.cmd('ovs-ofctl add-flow', switch, 'actions=normal')
         print switch.cmd('ovs-ofctl dump-flows', switch)
+
+    def exec_usercmd(self, cmd_file):
+        # open file
+        fh = open(cmd_file, "r")
+        print "*** Execute user command in %s." % (cmd_file)
+        for line in fh:
+            line = line.rstrip()
+            dmy = line.split(":", 1)
+            if len(dmy) != 2: continue
+            (host_name, cmd) = dmy
+            host = None
+            if self.switchList.has_key(host_name):
+                host = self.switchList[host_name][2]
+            elif self.hostList.has_key(host_name):
+                host = self.hostList[host_name][2]
+            else: continue
+            # execute each line
+            print "executing on %s :%s" % (host_name, cmd)
+            print host.cmd(cmd)
+        fh.close()
 
 #
 #
